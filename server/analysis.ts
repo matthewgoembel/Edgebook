@@ -30,6 +30,8 @@ export interface Position {
   mistakes: string[];
   setups: string[];
   strategy: string | null;
+  entryType: string | null;
+  plannedRisk: number | null;
   withVwap: boolean | null;
   rangeLocation: number | null;
   mfePoints: number | null;
@@ -113,6 +115,8 @@ export function toPositions(trades: TradeRow[], be: number, extras?: TradeExtras
       mistakes: unique('mistake'),
       setups: unique('setup'),
       strategy: first.strategy_id ? (extras?.strategies.get(first.strategy_id) ?? null) : null,
+      entryType: first.entry_type,
+      plannedRisk: rows.every((r) => r.risk_amount !== null) ? rows.reduce((a, r) => a + r.risk_amount!, 0) : null,
       withVwap: entry?.withVwap ?? null,
       rangeLocation: entry?.rangeLocation ?? null,
       mfePoints: entry?.mfePoints ?? null,
@@ -235,6 +239,7 @@ export function buildPatterns(positions: Position[], facts: Map<string, DayFacts
       ),
     },
     { key: 'hold', title: 'Hold time', rows: bucket(positions, (p) => holdOf(p.holdSec), HOLDS) },
+    { key: 'entrytype', title: 'Entry order type', rows: bucket(positions, (p) => p.entryType) },
     {
       key: 'size',
       title: 'Position size',

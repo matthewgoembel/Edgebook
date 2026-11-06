@@ -40,7 +40,7 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const res = await api('/import', { method: 'POST', body });
-      localStorage.setItem('lastAccount', String(res.accountId));
+      if (res.accountId) localStorage.setItem('lastAccount', String(res.accountId));
       setResults(res.results);
       await refresh();
     } catch (err) {
@@ -62,8 +62,9 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
               <div key={r.file} className={`banner ${r.error ? 'bad' : 'ok'}`} style={{ display: 'block' }}>
                 <b style={{ fontWeight: 500 }}>{r.file}</b>
                 <div style={{ marginTop: 3 }}>
-                  {r.error ?? `${r.added} new trade${r.added === 1 ? '' : 's'} added${r.skipped ? `, ${r.skipped} already imported and skipped` : ''}.`}
+                  {r.error ?? (r.kind === 'cash' ? `${r.total} cash entries read.` : `${r.added} new trade${r.added === 1 ? '' : 's'} added${r.skipped ? `, ${r.skipped} already imported and skipped` : ''}.`)}
                 </div>
+                {(r.notes ?? []).map((n: string) => <div key={n} style={{ marginTop: 3 }}>{n}</div>)}
               </div>
             ))}
           </>
@@ -104,8 +105,8 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
               }}
             >
               <UploadCloud size={28} />
-              <div style={{ marginTop: 8, color: 'var(--text)', fontWeight: 500 }}>{files.length ? files.map((f) => f.name).join(', ') : 'Drop your Topstep CSV here'}</div>
-              <div className="hint">or click to choose. Several files at once is fine, and re-uploading never creates duplicates.</div>
+              <div style={{ marginTop: 8, color: 'var(--text)', fontWeight: 500 }}>{files.length ? files.map((f) => f.name).join(', ') : 'Drop your CSV files here'}</div>
+              <div className="hint">Topstep: the trades export. Tradovate or Lucid: Orders and Cash History together. Re-uploading never creates duplicates.</div>
               <input ref={input} hidden type="file" accept=".csv,text/csv" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
             </div>
             {error && <div className="banner bad" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}

@@ -12,6 +12,7 @@ import { dayContext, ensureBars, entryContext, feedFor, sessionBars } from './ma
 import { today, wallClock, weekday, zonedTs, addDays } from './time.ts';
 import { explainError, failInterruptedReports, hasAiKey, startReport, streamChat, testKey } from './ai.ts';
 import { authEnabled, authRoutes, requireAuth } from './auth.ts';
+import { allocateCosts, detectFormat, isFunding, isTradeProceeds, isTradingCost, parseTradovateCash, parseTradovateOrders, type CashRow } from './tradovate.ts';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -141,17 +142,19 @@ app.delete('/api/txns/:id', (req, res) => {
 const insertTrade = db.prepare(`
   INSERT OR IGNORE INTO trades (account_id, import_id, external_id, symbol, contract, side, qty, entry_price, exit_price,
     entered_at, exited_at, entered_ts, exited_ts, date, open_time, close_date, close_time, session_date, duration_sec,
-    gross_pnl, fees, commissions, net_pnl, point_value)
+    gross_pnl, fees, commissions, net_pnl, point_value, risk_amount, entry_type, exit_type, stop_price)
   VALUES (@account_id, @import_id, @external_id, @symbol, @contract, @side, @qty, @entry_price, @exit_price,
     @entered_at, @exited_at, @entered_ts, @exited_ts, @date, @open_time, @close_date, @close_time, @session_date, @duration_sec,
-    @gross_pnl, @fees, @commissions, @net_pnl, @point_value)
+    @gross_pnl, @fees, @commissions, @net_pnl, @point_value, @risk_amount, @entry_type, @exit_type, @stop_price)
 `);
+
+const OPTIONAL_TRADE_FIELDS = { risk_amount: null, entry_type: null, exit_type: null, stop_price: null };
 
 const importRows = db.transaction((accountId: number, filename: string, rows: ParsedTrade[]) => {
   const imp = db.prepare('INSERT INTO imports (account_id, filename, rows_total, rows_added, rows_skipped) VALUES (?, ?, ?, 0, 0)').run(accountId, filename, rows.length);
   const importId = Number(imp.lastInsertRowid);
   let added = 0;
-  for (const r of rows) added += insertTrade.run({ ...r, account_id: accountId, import_id: importId }).changes;
+  for (const r of rows) added += insertTrade.run({ ...OPTIONAL_TRADE_FIELDS, ...r, account_id: accountId, import_id: importId }).changes;
   db.prepare('UPDATE imports SET rows_added = ?, rows_skipped = ? WHERE id = ?').run(added, rows.length - added, importId);
   if (!added) db.prepare('DELETE FROM imports WHERE id = ?').run(importId);
   return { added, skipped: rows.length - added };
@@ -171,29 +174,164 @@ function backfillMarket(trades: { symbol: string; date: string }[]) {
   })();
 }
 
+/** Saves Cash History rows once each. Deposits and payouts also go on the account's balance. */
+function storeCash(accountId: number, rows: CashRow[]) {
+  const insert = db.prepare('INSERT OR IGNORE INTO broker_cash (transaction_id, account_id, ts, date, type, amount, contract) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const fundedBefore = (db.prepare("SELECT COUNT(*) c FROM broker_cash WHERE account_id = ? AND type = 'Fund Transaction'").get(accountId) as { c: number }).c > 0;
+  let funded = fundedBefore;
+  for (const row of [...rows].sort((a, b) => a.ts - b.ts)) {
+    if (!insert.run(row.id, accountId, row.ts, row.date, row.type, row.amount, row.contract).changes || !isFunding(row.type)) continue;
+    const account = db.prepare('SELECT initial_balance FROM accounts WHERE id = ?').get(accountId) as { initial_balance: number };
+    const isOpeningDeposit = !funded;
+    funded = true;
+    if (isOpeningDeposit && !account.initial_balance) db.prepare('UPDATE accounts SET initial_balance = ? WHERE id = ?').run(row.amount, accountId);
+    else if (!(isOpeningDeposit && Math.abs(account.initial_balance - row.amount) < 0.01)) {
+      db.prepare('INSERT INTO account_txns (account_id, date, amount, note) VALUES (?, ?, ?, ?)').run(accountId, row.date, row.amount, 'From Cash History');
+    }
+  }
+}
+
+/** Recalculated from everything stored, so Orders and Cash History can arrive in any order. */
+function applyBrokerCosts(accountId: number) {
+  const trades = db
+    .prepare("SELECT id, contract, qty, entered_ts, exited_ts, gross_pnl, fees FROM trades WHERE account_id = ? AND external_id LIKE 'tv:%'")
+    .all(accountId) as { id: number; contract: string; qty: number; entered_ts: number; exited_ts: number; gross_pnl: number; fees: number }[];
+  const cash = (db.prepare('SELECT ts, amount, type, contract FROM broker_cash WHERE account_id = ?').all(accountId) as { ts: number; amount: number; type: string; contract: string }[]).filter(isTradingCost);
+  const { costs, unmatched } = allocateCosts(trades, cash);
+  const update = db.prepare('UPDATE trades SET commissions = ?, net_pnl = ? WHERE id = ?');
+  db.transaction(() => {
+    for (const t of trades) {
+      const cost = costs.get(t.id) ?? 0;
+      update.run(cost, round2(t.gross_pnl - t.fees - cost), t.id);
+    }
+  })();
+  return { unmatched, withoutCosts: trades.filter((t) => !costs.get(t.id)).length };
+}
+
+/** Compares paired trades with what the broker actually booked, for the dates in this upload. */
+function reconcile(accountId: number, tz: string) {
+  const dates = [...new Set((db.prepare("SELECT date FROM broker_cash WHERE account_id = ? AND type = 'Trade Paired'").all(accountId) as { date: string }[]).map((r) => r.date))];
+  const booked = (db.prepare('SELECT ts, amount, type FROM broker_cash WHERE account_id = ?').all(accountId) as { ts: number; amount: number; type: string }[]).filter((r) => isTradeProceeds(r.type));
+  const trades = db.prepare("SELECT exited_ts, gross_pnl FROM trades WHERE account_id = ? AND external_id LIKE 'tv:%'").all(accountId) as { exited_ts: number; gross_pnl: number }[];
+  const onDay = (ts: number) => wallClock(ts, tz).date;
+  const tradedDays = new Set(trades.map((t) => onDay(t.exited_ts)));
+  const covered = dates.filter((d) => tradedDays.has(d));
+  const sum = (rows: { amount: number }[]) => rows.reduce((a, r) => a + r.amount, 0);
+  const brokerTotal = sum(booked.filter((r) => covered.includes(onDay(r.ts))));
+  const ourTotal = trades.filter((t) => covered.includes(onDay(t.exited_ts))).reduce((a, t) => a + t.gross_pnl, 0);
+  return { days: covered.length, brokerTotal, ourTotal, matches: Math.abs(brokerTotal - ourTotal) < 0.01 };
+}
+
 app.post('/api/import', upload.array('files'), (req, res) => {
   const files = (req.files as Express.Multer.File[]) ?? [];
   if (!files.length) return void res.status(400).json({ error: 'Choose at least one CSV file.' });
-  let accountId = Number(req.body.accountId);
-  if (!accountId && req.body.newAccount?.trim()) {
-    accountId = Number(
-      db.prepare('INSERT INTO accounts (name, initial_balance) VALUES (?, ?)').run(req.body.newAccount.trim(), Number(req.body.initialBalance) || 0).lastInsertRowid,
-    );
-  }
-  if (!accountId) return void res.status(400).json({ error: 'Pick the account these trades belong to.' });
   const tz = getSettings().timezone;
-  const results = files.map((file) => {
+  const picked = Number(req.body.accountId) || 0;
+  const newName = String(req.body.newAccount ?? '').trim();
+  let created = 0;
+
+  // Only make the new account once a file actually needs it.
+  const chosenAccount = () => {
+    if (picked) return picked;
+    if (!created && newName) {
+      const existing = db.prepare('SELECT id FROM accounts WHERE name = ?').get(newName) as { id: number } | undefined;
+      created = existing?.id ?? Number(db.prepare('INSERT INTO accounts (name, initial_balance) VALUES (?, ?)').run(newName, Number(req.body.initialBalance) || 0).lastInsertRowid);
+    }
+    return created;
+  };
+
+  // Tradovate files name their account, so they can't land on the wrong one.
+  const notes = new Map<number, string[]>();
+  const accountForRef = (ref: string) => {
+    const known = db.prepare('SELECT id FROM accounts WHERE external_ref = ?').get(ref) as { id: number } | undefined;
+    if (known) return known.id;
+    const choice = chosenAccount();
+    if (choice) {
+      const row = db.prepare('SELECT external_ref, (SELECT COUNT(*) FROM trades t WHERE t.account_id = a.id) trades FROM accounts a WHERE a.id = ?').get(choice) as { external_ref: string | null; trades: number } | undefined;
+      if (row && !row.external_ref && !row.trades) {
+        db.prepare("UPDATE accounts SET external_ref = ?, broker = 'Tradovate' WHERE id = ?").run(ref, choice);
+        return choice;
+      }
+    }
+    return Number(db.prepare("INSERT INTO accounts (name, broker, external_ref) VALUES (?, 'Tradovate', ?)").run(ref, ref).lastInsertRowid);
+  };
+
+  const loaded = files.map((file) => {
+    const text = file.buffer.toString('utf8');
+    return { file, text, format: detectFormat(text) };
+  });
+  const touched = new Set<number>();
+  // Cash first, so a new account's opening deposit sets its balance before trades arrive.
+  const order = [...loaded].sort((a, b) => Number(b.format === 'tradovate-cash') - Number(a.format === 'tradovate-cash'));
+  const results = order.map(({ file, text, format }) => {
+    const base = { file: file.originalname, total: 0, added: 0, skipped: 0, dates: [] as string[], notes: [] as string[] };
     try {
-      const rows = parseTopstepCsv(file.buffer.toString('utf8'), tz);
-      const { added, skipped } = importRows(accountId, file.originalname, rows);
-      backfillMarket(rows);
-      const dates = [...new Set(rows.map((r) => r.date))].sort();
-      return { file: file.originalname, total: rows.length, added, skipped, dates };
+      if (format === 'topstep' || format === 'unknown') {
+        const rows = parseTopstepCsv(text, tz);
+        const accountId = chosenAccount();
+        if (!accountId) throw new Error('Pick the account these trades belong to.');
+        const { added, skipped } = importRows(accountId, file.originalname, rows);
+        backfillMarket(rows);
+        return { ...base, accountId, total: rows.length, added, skipped, dates: [...new Set(rows.map((r) => r.date))].sort() };
+      }
+      if (format === 'tradovate-other') {
+        throw new Error('This is a different Tradovate report. Download the Orders tab and the Cash History tab instead.');
+      }
+      if (format === 'tradovate-cash') {
+        const rows = parseTradovateCash(text, tz);
+        const refs = [...new Set(rows.map((r) => r.account))];
+        let accountId = 0;
+        for (const ref of refs) {
+          accountId = accountForRef(ref);
+          storeCash(accountId, rows.filter((r) => r.account === ref));
+          touched.add(accountId);
+        }
+        return { ...base, accountId, kind: 'cash', total: rows.length };
+      }
+      const { trades, unmatched } = parseTradovateOrders(text, tz);
+      if (!trades.length) throw new Error('No completed trades in this file.');
+      if (unmatched) base.notes.push(`${unmatched} contract(s) had no matching entry or exit, so they were left out. Export a date range that covers the whole position.`);
+      let added = 0;
+      let skipped = 0;
+      let accountId = 0;
+      for (const ref of new Set(trades.map((t) => t.accountRef))) {
+        accountId = accountForRef(ref);
+        const result = importRows(accountId, file.originalname, trades.filter((t) => t.accountRef === ref));
+        added += result.added;
+        skipped += result.skipped;
+        touched.add(accountId);
+      }
+      backfillMarket(trades);
+      return { ...base, accountId, total: trades.length, added, skipped, dates: [...new Set(trades.map((t) => t.date))].sort() };
     } catch (err) {
-      return { file: file.originalname, total: 0, added: 0, skipped: 0, dates: [], error: (err as Error).message };
+      return { ...base, error: (err as Error).message };
     }
   });
-  res.json({ accountId, results });
+
+  for (const accountId of touched) {
+    const list: string[] = [];
+    const { unmatched, withoutCosts } = applyBrokerCosts(accountId);
+    if (withoutCosts) list.push(`${withoutCosts} trade(s) have no fees yet. Upload Cash History for the same dates to add them.`);
+    if (unmatched) list.push(`${unmatched} fee line(s) in Cash History have no trade yet. Upload Orders for those dates.`);
+    const check = reconcile(accountId, tz);
+    if (check.days) {
+      list.push(
+        check.matches
+          ? `Checked against Tradovate: gross P&L matches to the cent over ${check.days} day(s).`
+          : `Check this: trades total $${check.ourTotal.toFixed(2)} gross, but Tradovate booked $${check.brokerTotal.toFixed(2)}.`,
+      );
+    }
+    notes.set(accountId, list);
+  }
+  for (const result of results) {
+    const id = (result as { accountId?: number }).accountId;
+    if (id && notes.has(id)) {
+      result.notes.push(...notes.get(id)!);
+      notes.delete(id);
+    }
+  }
+  const last = results.map((r) => (r as { accountId?: number }).accountId).filter(Boolean).pop();
+  res.json({ accountId: last ?? picked ?? null, results });
 });
 
 app.get('/api/imports', (_req, res) => {
@@ -339,6 +477,7 @@ app.post('/api/trades', (req, res) => {
     commissions: 0,
     net_pnl: round2(gross - fees),
     point_value: pv,
+    ...OPTIONAL_TRADE_FIELDS,
   });
   res.json({ id: info.lastInsertRowid });
 });

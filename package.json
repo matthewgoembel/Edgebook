@@ -8,7 +8,7 @@
     "build": "vite build",
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test server/metrics.test.ts"
+    "test": "tsx --test server/metrics.test.ts server/tradovate.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",

@@ -7,6 +7,7 @@ import { api, money, signClass, useUi } from '../lib';
 function Account({ a, onChange }: { a: any; onChange: () => void }) {
   const [txn, setTxn] = useState({ date: '', amount: '', note: '' });
   const [start, setStart] = useState(String(a.initial_balance));
+  const [name, setName] = useState(a.name);
   const [error, setError] = useState('');
   const addTxn = async () => {
     setError('');
@@ -39,6 +40,19 @@ function Account({ a, onChange }: { a: any; onChange: () => void }) {
       <div className="kv"><span>Trades / days</span><span>{a.trades} / {a.days}</span></div>
       <div className="kv"><span>Last trade</span><span>{a.lastTrade ?? '—'}</span></div>
       <div className="field" style={{ marginTop: 12 }}>
+        <label className="label">Account name</label>
+        <input
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={async () => {
+            if (!name.trim() || name === a.name) return;
+            await api(`/accounts/${a.id}`, { method: 'PUT', json: { name: name.trim() } });
+            onChange();
+          }}
+        />
+      </div>
+      <div className="field">
         <label className="label">Starting balance</label>
         <input
           className="input"

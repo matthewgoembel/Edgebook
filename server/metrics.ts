@@ -29,6 +29,9 @@ export interface TradeRow {
   strategy_id: number | null;
   risk_amount: number | null;
   rating: number | null;
+  entry_type: string | null;
+  exit_type: string | null;
+  stop_price: number | null;
 }
 
 export type Outcome = 'win' | 'loss' | 'be';

@@ -103,6 +103,8 @@ function positionLine(p: Position) {
   if (p.setups.length) parts.push(`setup: ${p.setups.join('/')}`);
   if (p.mistakes.length) parts.push(`mistake: ${p.mistakes.join('/')}`);
   if (p.strategy) parts.push(`strategy: ${p.strategy}`);
+  if (p.entryType) parts.push(`${p.entryType.toLowerCase()} entry`);
+  if (p.plannedRisk) parts.push(`planned risk $${p.plannedRisk.toFixed(0)} (${(p.net / p.plannedRisk).toFixed(2)}R)`);
   return parts.join(' | ');
 }
 

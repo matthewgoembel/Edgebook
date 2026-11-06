@@ -44,7 +44,7 @@ export function pointValue(symbol: string, fallback?: { gross: number; qty: numb
   return 1;
 }
 
-function splitLine(line: string) {
+export function splitLine(line: string) {
   const out: string[] = [];
   let cur = '';
   let quoted = false;

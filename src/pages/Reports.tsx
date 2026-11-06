@@ -33,7 +33,7 @@ const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'time', label: 'Days & times', groups: ['session', 'halfhour', 'weekday', 'hold'] },
   { key: 'instrument', label: 'Instruments', groups: ['symbol', 'side', 'symbolside', 'size'] },
-  { key: 'behavior', label: 'Behavior', groups: ['seq', 'after', 'reentry', 'mood', 'checklist'] },
+  { key: 'behavior', label: 'Behavior', groups: ['seq', 'after', 'reentry', 'entrytype', 'mood', 'checklist'] },
   { key: 'market', label: 'Market', groups: ['daytype', 'vwap', 'location'] },
   { key: 'tags', label: 'Tags & strategies', groups: ['setup', 'mistake', 'strategy'] },
   { key: 'days', label: 'Good vs bad days' },

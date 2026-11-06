@@ -108,6 +108,8 @@ export default function TradeDetail() {
               {kv('Opened', `${t.date} ${t.open_time}`)}
               {kv('Closed', `${t.close_date} ${t.close_time}`)}
               {kv('Duration', duration(t.duration_sec))}
+              {t.entry_type && kv('Entry / exit order', `${t.entry_type} / ${t.exit_type}`)}
+              {t.stop_price != null && kv('Original stop', price(t.stop_price))}
               {entry?.mfePoints != null && kv('Best price reached', `+${entry.mfePoints.toFixed(2)} pts`)}
               {entry?.maePoints != null && kv('Worst price reached', `-${entry.maePoints.toFixed(2)} pts`)}
               {entry?.withVwap != null && kv('Entry vs VWAP', entry.withVwap ? 'With' : 'Against')}

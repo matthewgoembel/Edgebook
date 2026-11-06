@@ -18,7 +18,9 @@ Every push to `main` redeploys automatically, and your data stays on the volume.
 
 ## Daily routine
 
-1. Export your trades from Topstep, then drop the CSV into **Upload Trades**. Uploading the same trades twice is safe.
+1. Export your trades, then drop the files into **Upload Trades**. Uploading the same trades twice is safe.
+   - **Topstep:** the trades export.
+   - **Tradovate or Lucid:** in Account Reports, download **Orders** and **Cash History** for the same dates and upload them together. The account is detected from the file, fees come from Cash History, and your original stop fills in planned risk.
 2. On the day page, paste your chart and your executions: click a box, then press Ctrl+V.
 3. Write your journal, pick your mood, tick your checklist.
 4. Click **Debrief this day** for the AI read of the session.

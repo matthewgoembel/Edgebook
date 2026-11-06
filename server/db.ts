@@ -206,6 +206,29 @@ CREATE TABLE IF NOT EXISTS ai_chat (
 );
 `);
 
+/** Adds new columns to a database created by an older version, so existing journals keep working. */
+function addColumn(table: string, column: string, definition: string) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+addColumn('accounts', 'external_ref', 'TEXT');
+addColumn('trades', 'entry_type', 'TEXT');
+addColumn('trades', 'exit_type', 'TEXT');
+addColumn('trades', 'stop_price', 'REAL');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS broker_cash (
+  transaction_id TEXT PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  contract TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_broker_cash_account ON broker_cash(account_id);
+`);
+
 const DEFAULT_SETTINGS: Record<string, string> = {
   be_threshold: '75',
   timezone: 'America/New_York',
