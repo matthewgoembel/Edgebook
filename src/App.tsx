@@ -30,10 +30,7 @@ const NAV = [
 export function Logo() {
   return (
     <div className="logo">
-      <svg className="logo-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <path d="M3 24l8-10 7 5L29 6" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M21 6h8v8" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <img className="logo-mark" src="/logo-symbol.svg" alt="" />
       Edgebook
     </div>
   );

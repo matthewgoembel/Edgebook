@@ -51,7 +51,7 @@ export function EquityArea({ data, dataKey, xKey, height = 260, xFormat, showAxi
         <XAxis dataKey={xKey} hide={!showAxis || hideX} tick={axis} tickFormatter={xFormat} tickLine={false} axisLine={false} minTickGap={50} />
         <YAxis hide={!showAxis} tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={58} />
         <Tooltip content={<MoneyTip labelFmt={xFormat} />} />
-        <Area type="monotone" dataKey={dataKey} stroke="#2f5fd0" strokeWidth={1.6} fill={`url(#${id})`} isAnimationActive={false} />
+        <Area type="monotone" dataKey={dataKey} stroke="#315fdb" strokeWidth={1.6} fill={`url(#${id})`} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -64,7 +64,7 @@ export function DailyBars({ data, height = 260 }: { data: { date: string; net: n
         <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" tick={axis} tickFormatter={shortDate} tickLine={false} axisLine={false} minTickGap={50} />
         <YAxis tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={58} />
-        <Tooltip content={<MoneyTip labelFmt={shortDate} />} cursor={{ fill: 'rgba(47,95,208,0.06)' }} />
+        <Tooltip content={<MoneyTip labelFmt={shortDate} />} cursor={{ fill: 'rgba(49,95,219,0.06)' }} />
         <ReferenceLine y={0} stroke="#c9c9c9" />
         <Bar dataKey="net" isAnimationActive={false} maxBarSize={14}>
           {data.map((d) => (
@@ -90,7 +90,7 @@ export function DrawdownChart({ data, height = 290 }: { data: { date: string; dr
         <XAxis dataKey="date" tick={axis} tickFormatter={shortDate} tickLine={false} axisLine={false} minTickGap={50} />
         <YAxis tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={58} />
         <Tooltip content={<MoneyTip labelFmt={shortDate} />} />
-        <Area type="monotone" dataKey="drawdown" stroke="#2f5fd0" strokeWidth={1.6} fill="url(#ddFill)" isAnimationActive={false} />
+        <Area type="monotone" dataKey="drawdown" stroke="#315fdb" strokeWidth={1.6} fill="url(#ddFill)" isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -105,7 +105,7 @@ export function BalanceChart({ data, height = 260 }: { data: { date: string; bal
         <YAxis tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={62} />
         <Tooltip content={<MoneyTip labelFmt={shortDate} />} />
         <Legend verticalAlign="top" align="left" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
-        <Line name="Account balance" type="monotone" dataKey="balance" stroke="#2f5fd0" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+        <Line name="Account balance" type="monotone" dataKey="balance" stroke="#315fdb" strokeWidth={1.8} dot={false} isAnimationActive={false} />
         <Line name="Deposits / withdrawals" type="monotone" dataKey="flow" stroke="#e5534b" strokeWidth={1.4} dot={false} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
@@ -118,14 +118,14 @@ export function EdgeRadar({ parts }: { parts: { label: string; value: number; di
       <RadarChart data={parts} outerRadius="74%">
         <defs>
           <linearGradient id="radarFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2f5fd0" stopOpacity={0.7} />
-            <stop offset="100%" stopColor="#2f5fd0" stopOpacity={0.15} />
+            <stop offset="0%" stopColor="#315fdb" stopOpacity={0.7} />
+            <stop offset="100%" stopColor="#315fdb" stopOpacity={0.15} />
           </linearGradient>
         </defs>
         <PolarGrid stroke="#e7ebf0" />
         <PolarAngleAxis dataKey="label" tick={{ fontSize: 12.5, fill: '#47515f' }} />
         <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-        <Radar dataKey="value" stroke="#2f5fd0" strokeWidth={1.5} fill="url(#radarFill)" dot={{ r: 3, fill: '#fff', stroke: '#2f5fd0', strokeWidth: 1.5 }} isAnimationActive={false} />
+        <Radar dataKey="value" stroke="#315fdb" strokeWidth={1.5} fill="url(#radarFill)" dot={{ r: 3, fill: '#fff', stroke: '#315fdb', strokeWidth: 1.5 }} isAnimationActive={false} />
         <Tooltip
           content={({ active, payload }: any) =>
             active && payload?.length ? (
@@ -256,7 +256,7 @@ export function PriceChart({ bars, trades, height = 420, focus }: { bars: number
     const markers: SeriesMarker<Time>[] = [];
     for (const t of trades) {
       const long = t.side === 'Long';
-      markers.push({ time: snap(t.entered_ts), position: long ? 'belowBar' : 'aboveBar', color: t.highlight === false ? '#b3c3e6' : '#2f5fd0', shape: long ? 'arrowUp' : 'arrowDown', text: t.highlight ? `${long ? 'Buy' : 'Sell'} ${t.qty}` : '' });
+      markers.push({ time: snap(t.entered_ts), position: long ? 'belowBar' : 'aboveBar', color: t.highlight === false ? '#b3c3e6' : '#315fdb', shape: long ? 'arrowUp' : 'arrowDown', text: t.highlight ? `${long ? 'Buy' : 'Sell'} ${t.qty}` : '' });
       markers.push({ time: snap(t.exited_ts), position: long ? 'aboveBar' : 'belowBar', color: t.net_pnl >= 0 ? '#128a60' : '#cf3f37', shape: 'circle', text: t.highlight ? money(t.net_pnl, { cents: false }) : '' });
     }
     markers.sort((a, b) => Number(a.time) - Number(b.time));
