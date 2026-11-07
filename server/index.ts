@@ -774,7 +774,15 @@ app.get('/api/templates', (_req, res) => {
 });
 
 app.post('/api/templates', (req, res) => {
-  res.json({ id: db.prepare('INSERT INTO templates (name, body_html) VALUES (?, ?)').run(req.body.name, req.body.body_html ?? '').lastInsertRowid });
+  const name = String(req.body.name ?? '').trim();
+  if (!name) return void res.status(400).json({ error: 'Give the template a name.' });
+  res.json({ id: db.prepare('INSERT INTO templates (name, body_html) VALUES (?, ?)').run(name, req.body.body_html ?? '').lastInsertRowid });
+});
+
+app.put('/api/templates/:id', (req, res) => {
+  const { name, body_html } = req.body;
+  db.prepare('UPDATE templates SET name = COALESCE(?, name), body_html = COALESCE(?, body_html) WHERE id = ?').run(name ?? null, body_html ?? null, param(req, 'id'));
+  res.json({ ok: true });
 });
 
 app.delete('/api/templates/:id', (req, res) => {

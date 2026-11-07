@@ -265,7 +265,11 @@ if ((db.prepare('SELECT COUNT(*) c FROM checklist_items').get() as { c: number }
   ins.run('Uploaded trades and journaled the session', 3);
 }
 
-if ((db.prepare('SELECT COUNT(*) c FROM templates').get() as { c: number }).c === 0) {
+// Only seed once, so deleting every template doesn't bring the starters back.
+const templatesSeeded = db.prepare("SELECT 1 FROM settings WHERE key = 'templates_seeded'").get();
+const templateCount = (db.prepare('SELECT COUNT(*) c FROM templates').get() as { c: number }).c;
+setSetting('templates_seeded', '1');
+if (!templatesSeeded && templateCount === 0) {
   const ins = db.prepare('INSERT INTO templates (name, body_html) VALUES (?, ?)');
   ins.run(
     'Pre-market plan',

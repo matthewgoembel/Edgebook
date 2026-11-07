@@ -25,6 +25,8 @@ Every push to `main` redeploys automatically, and your data stays on the volume.
 3. Write your journal, pick your mood, tick your checklist.
 4. Click **Debrief this day** for the AI read of the session.
 
+**Journal tools:** every editor has checkboxes, text and highlight colors, divider lines and more. Use the **Templates** button in the toolbar to insert a template, save the current note as one, or create and edit your own.
+
 Bring in your history by uploading every older Topstep export at once. Pick the matching account for each batch, because the CSV does not say which account it came from.
 
 ## AI setup

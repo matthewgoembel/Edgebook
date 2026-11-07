@@ -42,8 +42,6 @@ export default function DayPage() {
   const { filters } = useFilters();
   const key = ['day', date, filters.accounts];
   const { data } = useQuery<any>({ queryKey: key, queryFn: () => api(`/day/${date}${filterQuery({ ...filters, from: '', to: '', status: '' })}`) });
-  const { data: templates = [] } = useQuery<any[]>({ queryKey: ['templates'], queryFn: () => api('/templates') });
-  const [insert, setInsert] = useState<{ html: string; nonce: number } | null>(null);
   const [error, setError] = useState('');
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['day', date] });
@@ -92,25 +90,13 @@ export default function DayPage() {
             <ScreenshotGrid attachments={data.attachments} ownerType="day" ownerKey={date} onChange={() => void refresh()} />
           </Card>
 
-          <Card
-            title="Daily journal"
-            right={
-              <select className="select" style={{ width: 170 }} value="" onChange={(e) => {
-                const t = templates.find((x) => String(x.id) === e.target.value);
-                if (t) setInsert({ html: t.body_html, nonce: Date.now() });
-              }}>
-                <option value="">Insert template…</option>
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            }
-          >
+          <Card title="Daily journal">
             <RichEditor
               key={date}
               html={data.note?.body_html ?? ''}
               uploadKey={`day-${date}`}
               minHeight={220}
               placeholder="What was the plan? What did you see? How did you feel?"
-              insertHtml={insert}
               onSave={(body) => api(`/notes/day/${date}`, { method: 'PUT', json: body })}
             />
           </Card>

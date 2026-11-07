@@ -29,7 +29,7 @@ export function Card({ title, info, right, children, bodyStyle }: { title?: Reac
   );
 }
 
-export function Dropdown({ label, children, align = 'right' }: { label: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right' }) {
+export function Dropdown({ label, children, align = 'right', buttonClass = '', menuClass = '', title }: { label: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; buttonClass?: string; menuClass?: string; title?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -42,11 +42,11 @@ export function Dropdown({ label, children, align = 'right' }: { label: ReactNod
   }, [open]);
   return (
     <div className="menu-wrap" ref={ref}>
-      <button className="btn" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className={`btn ${buttonClass}`} title={title} aria-label={title} onClick={() => setOpen((v) => !v)}>
         {label} <ChevronDown size={14} />
       </button>
       {open && (
-        <div className="menu" style={align === 'left' ? { left: 0, right: 'auto' } : undefined}>
+        <div className={`menu ${menuClass}`} style={align === 'left' ? { left: 0, right: 'auto' } : undefined}>
           {children(() => setOpen(false))}
         </div>
       )}
@@ -191,7 +191,7 @@ export function ModalHeader({ title, onClose }: { title: ReactNode; onClose: () 
       <div className="modal-title" style={{ fontSize: 18 }}>
         {title}
       </div>
-      <button className="arrow" onClick={onClose} aria-label="Close">
+      <button type="button" className="arrow" onClick={onClose} aria-label="Close">
         <X size={18} />
       </button>
     </div>

@@ -5,12 +5,11 @@ import { useNavigate } from 'react-router-dom';
 import { RichEditor } from '../components/Editor';
 import { api, money, signClass } from '../lib';
 
-function NoteEditor({ id, folders, templates, onDeleted }: { id: number; folders: any[]; templates: any[]; onDeleted: () => void }) {
+function NoteEditor({ id, folders, onDeleted }: { id: number; folders: any[]; onDeleted: () => void }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { data: note } = useQuery<any>({ queryKey: ['note', id], queryFn: () => api(`/notes/${id}`), staleTime: 0, gcTime: 0 });
   const [title, setTitle] = useState('');
-  const [insert, setInsert] = useState<{ html: string; nonce: number } | null>(null);
   useEffect(() => { if (note) setTitle(note.title); }, [note?.id]);
   if (!note) return null;
 
@@ -27,13 +26,6 @@ function NoteEditor({ id, folders, templates, onDeleted }: { id: number; folders
         <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
           <select className="select" style={{ width: 170 }} value={note.folder_id ?? ''} onChange={(e) => void put({ folder_id: Number(e.target.value) })} aria-label="Folder">
             {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </select>
-          <select className="select" style={{ width: 170 }} value="" aria-label="Insert template" onChange={(e) => {
-            const t = templates.find((x) => String(x.id) === e.target.value);
-            if (t) setInsert({ html: t.body_html, nonce: Date.now() });
-          }}>
-            <option value="">Insert template…</option>
-            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           <button className={`btn small ${note.pinned ? 'primary' : ''}`} onClick={() => void put({ pinned: !note.pinned }).then(() => qc.invalidateQueries({ queryKey: ['note', id] }))}><Pin size={13} /> {note.pinned ? 'Pinned' : 'Pin'}</button>
           {note.type === 'day' && <button className="btn small" onClick={() => navigate(`/day/${note.date}`)}>Open day</button>}
@@ -60,7 +52,6 @@ function NoteEditor({ id, folders, templates, onDeleted }: { id: number; folders
               html={note.body_html}
               uploadKey={`note-${id}`}
               minHeight={380}
-              insertHtml={insert}
               onSave={(body) => put(body)}
             />
           </div>
@@ -76,7 +67,6 @@ export default function NotebookPage() {
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<number | null>(null);
   const { data: folders = [] } = useQuery<any[]>({ queryKey: ['folders'], queryFn: () => api('/folders') });
-  const { data: templates = [] } = useQuery<any[]>({ queryKey: ['templates'], queryFn: () => api('/templates') });
   const query = new URLSearchParams();
   if (typeof folder === 'number') query.set('folder', String(folder));
   if (folder === 'pinned') query.set('pinned', '1');
@@ -150,7 +140,7 @@ export default function NotebookPage() {
         </div>
         <div className="nb-col">
           {selected ? (
-            <NoteEditor key={selected} id={selected} folders={folders} templates={templates} onDeleted={() => setSelected(null)} />
+            <NoteEditor key={selected} id={selected} folders={folders} onDeleted={() => setSelected(null)} />
           ) : (
             <div className="empty" style={{ margin: 'auto' }}><h3>Pick a note or start a new one</h3>Day and trade notes appear here automatically.</div>
           )}
