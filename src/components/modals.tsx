@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { NotebookPen, Play, UploadCloud } from 'lucide-react';
+import { NotebookPen, Play, UploadCloud, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, duration, longDate, money, MOODS, pct, profitFactorLabel, signClass, useFilters, filterQuery } from '../lib';
@@ -11,32 +11,92 @@ function useRefreshAll() {
   return () => qc.invalidateQueries();
 }
 
+type UploadKind = 'topstep' | 'orders' | 'cash' | 'unsupported';
+
+interface UploadItem {
+  key: string;
+  file: File;
+  kind: UploadKind;
+  /** Tradovate account numbers found in the file. */
+  refs: string[];
+  /** Topstep files don't name their account, so each gets a choice: an account id or 'new'. */
+  account: string;
+  newName: string;
+  balance: string;
+}
+
+const KIND_LABEL: Record<UploadKind, string> = {
+  topstep: 'Topstep trades',
+  orders: 'Tradovate Orders',
+  cash: 'Tradovate Cash History',
+  unsupported: 'Not a supported file',
+};
+
+/** Reads just enough of a CSV to know what it is and which account it belongs to. */
+async function inspectCsv(file: File): Promise<Pick<UploadItem, 'kind' | 'refs'>> {
+  const lines = (await file.text()).replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+  const header = (lines[0] ?? '').split(',').map((h) => h.trim());
+  const has = (...cols: string[]) => cols.every((c) => header.includes(c));
+  const kind: UploadKind = has('Id', 'ContractName', 'EnteredAt') ? 'topstep' : has('Order ID', 'Avg Fill Price', 'Fill Time') ? 'orders' : has('Transaction ID', 'Cash Change Type') ? 'cash' : 'unsupported';
+  if (kind !== 'orders' && kind !== 'cash') return { kind, refs: [] };
+  // The account column comes before any quoted values in both reports, so a plain split is safe.
+  const column = header.indexOf('Account');
+  return { kind, refs: [...new Set(lines.slice(1).map((l) => l.split(',')[column]?.trim()).filter(Boolean))] };
+}
+
 export function ImportModal({ onClose }: { onClose: () => void }) {
   const refresh = useRefreshAll();
   const navigate = useNavigate();
   const { data: meta } = useQuery<any>({ queryKey: ['meta'], queryFn: () => api('/meta') });
-  const accounts = (meta?.accounts ?? []).filter((a: any) => !a.archived);
-  const [accountId, setAccountId] = useState<string>(() => localStorage.getItem('lastAccount') ?? '');
-  const [newAccount, setNewAccount] = useState('');
-  const [balance, setBalance] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
+  const accounts: any[] = (meta?.accounts ?? []).filter((a: any) => !a.archived);
+  const [items, setItems] = useState<UploadItem[]>([]);
+  const [refNames, setRefNames] = useState<Record<string, { name: string }>>({});
   const [drag, setDrag] = useState(false);
   const [results, setResults] = useState<any[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
-  const selected = accounts.some((a: any) => String(a.id) === accountId) ? accountId : accounts.length ? String(accounts[0].id) : 'new';
+  const addFiles = async (incoming: File[]) => {
+    const csvs = incoming.filter((f) => f.name.toLowerCase().endsWith('.csv'));
+    const inspected = await Promise.all(csvs.map(async (file) => ({ file, ...(await inspectCsv(file)) })));
+    setItems((current) => {
+      const next = [...current];
+      const last = localStorage.getItem('lastAccount') ?? '';
+      for (const { file, kind, refs } of inspected) {
+        const key = `${file.name}|${file.size}|${file.lastModified}`;
+        if (next.some((i) => i.key === key)) continue;
+        // Start each Topstep file on a different account, so copy-trade exports don't pile into one.
+        const used = new Set(next.filter((i) => i.kind === 'topstep').map((i) => i.account));
+        const free = [last, ...accounts.map((a) => String(a.id))].find((id) => accounts.some((a) => String(a.id) === id) && !used.has(id));
+        next.push({ key, file, kind, refs, account: free ?? 'new', newName: '', balance: '' });
+      }
+      return next;
+    });
+  };
+
+  const patch = (key: string, change: Partial<UploadItem>) => setItems((list) => list.map((i) => (i.key === key ? { ...i, ...change } : i)));
+  const usable = items.filter((i) => i.kind !== 'unsupported');
+  const unknownRefs = [...new Set(usable.flatMap((i) => i.refs))].filter((ref) => !accounts.some((a) => a.external_ref === ref));
+  const accountName = (ref: string) => accounts.find((a) => a.external_ref === ref)?.name ?? refNames[ref]?.name ?? ref;
+
+  const topstepCounts = new Map<string, number>();
+  for (const i of items) if (i.kind === 'topstep' && i.account !== 'new') topstepCounts.set(i.account, (topstepCounts.get(i.account) ?? 0) + 1);
+  const shared = [...topstepCounts.entries()].filter(([, n]) => n > 1).map(([id]) => accounts.find((a) => String(a.id) === id)?.name);
 
   const submit = async () => {
     setError('');
+    const missing = usable.find((i) => i.kind === 'topstep' && i.account === 'new' && !i.newName.trim());
+    if (missing) return setError(`Name the new account for ${missing.file.name}.`);
     const body = new FormData();
-    files.forEach((f) => body.append('files', f));
-    if (selected === 'new') {
-      if (!newAccount.trim()) return setError('Name the account, for example "Topstep 150K".');
-      body.append('newAccount', newAccount);
-      body.append('initialBalance', balance);
-    } else body.append('accountId', selected);
+    usable.forEach((i) => body.append('files', i.file));
+    body.append(
+      'meta',
+      JSON.stringify({
+        files: usable.map((i) => (i.account === 'new' ? { newName: i.newName, balance: Number(i.balance) || 0 } : { accountId: Number(i.account) })),
+        refs: refNames,
+      }),
+    );
     setBusy(true);
     try {
       const res = await api('/import', { method: 'POST', body });
@@ -53,7 +113,7 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
   const lastDate = results?.flatMap((r) => r.dates).sort().pop();
 
   return (
-    <Modal size="small" onClose={onClose}>
+    <Modal size="medium" onClose={onClose}>
       <div className="modal-body">
         <ModalHeader title="Upload trades" onClose={onClose} />
         {results ? (
@@ -70,29 +130,6 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
           </>
         ) : (
           <>
-            <div className="field">
-              <label className="label">Which account are these from?</label>
-              <select className="select" value={selected} onChange={(e) => setAccountId(e.target.value)}>
-                {accounts.map((a: any) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-                <option value="new">+ New account</option>
-              </select>
-            </div>
-            {selected === 'new' && (
-              <div className="row" style={{ alignItems: 'flex-start' }}>
-                <div className="field grow">
-                  <label className="label">Account name</label>
-                  <input className="input" value={newAccount} onChange={(e) => setNewAccount(e.target.value)} placeholder="Topstep 150K" />
-                </div>
-                <div className="field grow">
-                  <label className="label">Starting balance</label>
-                  <input className="input" type="number" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="150000" />
-                </div>
-              </div>
-            )}
             <div
               className={`drop ${drag ? 'drag' : ''}`}
               onClick={() => input.current?.click()}
@@ -101,14 +138,71 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
               onDrop={(e) => {
                 e.preventDefault();
                 setDrag(false);
-                setFiles(Array.from(e.dataTransfer.files).filter((f) => f.name.toLowerCase().endsWith('.csv')));
+                void addFiles(Array.from(e.dataTransfer.files));
               }}
             >
               <UploadCloud size={28} />
-              <div style={{ marginTop: 8, color: 'var(--text)', fontWeight: 500 }}>{files.length ? files.map((f) => f.name).join(', ') : 'Drop your CSV files here'}</div>
-              <div className="hint">Topstep: the trades export. Tradovate or Lucid: Orders and Cash History together. Re-uploading never creates duplicates.</div>
-              <input ref={input} hidden type="file" accept=".csv,text/csv" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+              <div style={{ marginTop: 8, color: 'var(--text)', fontWeight: 500 }}>{items.length ? 'Add more files' : 'Drop your CSV files here'}</div>
+              <div className="hint">Add as many as you like, all at once or one after another. Topstep: the trades export. Tradovate or Lucid: Orders and Cash History. Re-uploading never creates duplicates.</div>
+              <input ref={input} hidden type="file" accept=".csv,text/csv" multiple onChange={(e) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
             </div>
+
+            {items.length > 0 && (
+              <div className="upload-list">
+                {items.map((item) => (
+                  <div className={`upload-row ${item.kind === 'unsupported' ? 'bad' : ''}`} key={item.key}>
+                    <div className="row" style={{ justifyContent: 'space-between' }}>
+                      <div className="grow">
+                        <div className="upload-name">{item.file.name}</div>
+                        <div className="hint">
+                          {KIND_LABEL[item.kind]}
+                          {item.refs.length > 0 && ` → ${item.refs.map(accountName).join(', ')}`}
+                          {item.kind === 'unsupported' && '. It will be skipped.'}
+                        </div>
+                      </div>
+                      <button className="arrow" onClick={() => setItems((list) => list.filter((i) => i.key !== item.key))} aria-label={`Remove ${item.file.name}`}><X size={15} /></button>
+                    </div>
+                    {item.kind === 'topstep' && (
+                      <div className="upload-account">
+                        <select className="select" aria-label={`Account for ${item.file.name}`} value={item.account} onChange={(e) => patch(item.key, { account: e.target.value })}>
+                          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          <option value="new">+ New account</option>
+                        </select>
+                        {item.account === 'new' && (
+                          <>
+                            <input className="input" aria-label="New account name" placeholder="Account name" value={item.newName} onChange={(e) => patch(item.key, { newName: e.target.value })} />
+                            <input className="input" aria-label="Starting balance" type="number" placeholder="Starting balance" value={item.balance} onChange={(e) => patch(item.key, { balance: e.target.value })} />
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {unknownRefs.length > 0 && (
+              <div className="upload-new-accounts">
+                <div className="label">New Tradovate account{unknownRefs.length > 1 ? 's' : ''}: give {unknownRefs.length > 1 ? 'each' : 'it'} a name. Cash History sets the starting balance.</div>
+                {unknownRefs.map((ref) => (
+                  <div className="upload-account" key={ref}>
+                    <input
+                      className="input"
+                      aria-label={`Name for ${ref}`}
+                      placeholder={ref}
+                      value={refNames[ref]?.name ?? ''}
+                      onChange={(e) => setRefNames({ ...refNames, [ref]: { name: e.target.value } })}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {shared.length > 0 && (
+              <div className="banner" style={{ marginTop: 12, marginBottom: 0 }}>
+                Several Topstep files are going into {shared.join(', ')}. That's right for different dates. For copy-trade accounts, give each file its own account, or your results will be counted several times over.
+              </div>
+            )}
             {error && <div className="banner bad" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}
           </>
         )}
@@ -126,8 +220,8 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn primary" disabled={!files.length || busy} onClick={() => void submit()}>
-              {busy ? 'Importing…' : 'Import'}
+            <button className="btn primary" disabled={!usable.length || busy} onClick={() => void submit()}>
+              {busy ? 'Importing…' : usable.length > 1 ? `Import ${usable.length} files` : 'Import'}
             </button>
           </>
         )}

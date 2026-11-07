@@ -174,6 +174,20 @@ function backfillMarket(trades: { symbol: string; date: string }[]) {
   })();
 }
 
+interface ImportMeta {
+  files: { accountId?: number; newName?: string; balance?: number }[];
+  refs: Record<string, { name?: string }>;
+}
+
+function parseImportMeta(raw: unknown): ImportMeta {
+  try {
+    const value = JSON.parse(String(raw ?? '{}')) as Partial<ImportMeta>;
+    return { files: Array.isArray(value.files) ? value.files : [], refs: value.refs ?? {} };
+  } catch {
+    return { files: [], refs: {} };
+  }
+}
+
 /** Saves Cash History rows once each. Deposits and payouts also go on the account's balance. */
 function storeCash(accountId: number, rows: CashRow[]) {
   const insert = db.prepare('INSERT OR IGNORE INTO broker_cash (transaction_id, account_id, ts, date, type, amount, contract) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -226,18 +240,16 @@ app.post('/api/import', upload.array('files'), (req, res) => {
   const files = (req.files as Express.Multer.File[]) ?? [];
   if (!files.length) return void res.status(400).json({ error: 'Choose at least one CSV file.' });
   const tz = getSettings().timezone;
-  const picked = Number(req.body.accountId) || 0;
-  const newName = String(req.body.newAccount ?? '').trim();
-  let created = 0;
+  const meta = parseImportMeta(req.body.meta);
 
-  // Only make the new account once a file actually needs it.
-  const chosenAccount = () => {
-    if (picked) return picked;
-    if (!created && newName) {
-      const existing = db.prepare('SELECT id FROM accounts WHERE name = ?').get(newName) as { id: number } | undefined;
-      created = existing?.id ?? Number(db.prepare('INSERT INTO accounts (name, initial_balance) VALUES (?, ?)').run(newName, Number(req.body.initialBalance) || 0).lastInsertRowid);
-    }
-    return created;
+  /** Topstep files don't name their account, so the upload says where each one goes. */
+  const accountForFile = (index: number) => {
+    const choice = meta.files[index];
+    if (choice?.accountId) return choice.accountId;
+    const name = choice?.newName?.trim();
+    if (!name) return 0;
+    const existing = db.prepare('SELECT id FROM accounts WHERE name = ?').get(name) as { id: number } | undefined;
+    return existing?.id ?? Number(db.prepare('INSERT INTO accounts (name, initial_balance) VALUES (?, ?)').run(name, choice?.balance || 0).lastInsertRowid);
   };
 
   // Tradovate files name their account, so they can't land on the wrong one.
@@ -245,30 +257,30 @@ app.post('/api/import', upload.array('files'), (req, res) => {
   const accountForRef = (ref: string) => {
     const known = db.prepare('SELECT id FROM accounts WHERE external_ref = ?').get(ref) as { id: number } | undefined;
     if (known) return known.id;
-    const choice = chosenAccount();
-    if (choice) {
-      const row = db.prepare('SELECT external_ref, (SELECT COUNT(*) FROM trades t WHERE t.account_id = a.id) trades FROM accounts a WHERE a.id = ?').get(choice) as { external_ref: string | null; trades: number } | undefined;
-      if (row && !row.external_ref && !row.trades) {
-        db.prepare("UPDATE accounts SET external_ref = ?, broker = 'Tradovate' WHERE id = ?").run(ref, choice);
-        return choice;
-      }
+    const name = meta.refs[ref]?.name?.trim() || ref;
+    const sameName = db
+      .prepare('SELECT a.id, a.external_ref, (SELECT COUNT(*) FROM trades t WHERE t.account_id = a.id) trades FROM accounts a WHERE a.name = ?')
+      .get(name) as { id: number; external_ref: string | null; trades: number } | undefined;
+    if (sameName && !sameName.external_ref && !sameName.trades) {
+      db.prepare("UPDATE accounts SET external_ref = ?, broker = 'Tradovate' WHERE id = ?").run(ref, sameName.id);
+      return sameName.id;
     }
-    return Number(db.prepare("INSERT INTO accounts (name, broker, external_ref) VALUES (?, 'Tradovate', ?)").run(ref, ref).lastInsertRowid);
+    return Number(db.prepare("INSERT INTO accounts (name, broker, external_ref) VALUES (?, 'Tradovate', ?)").run(sameName ? `${name} (${ref})` : name, ref).lastInsertRowid);
   };
 
-  const loaded = files.map((file) => {
+  const loaded = files.map((file, index) => {
     const text = file.buffer.toString('utf8');
-    return { file, text, format: detectFormat(text) };
+    return { file, text, index, format: detectFormat(text) };
   });
   const touched = new Set<number>();
   // Cash first, so a new account's opening deposit sets its balance before trades arrive.
   const order = [...loaded].sort((a, b) => Number(b.format === 'tradovate-cash') - Number(a.format === 'tradovate-cash'));
-  const results = order.map(({ file, text, format }) => {
+  const results = order.map(({ file, text, index, format }) => {
     const base = { file: file.originalname, total: 0, added: 0, skipped: 0, dates: [] as string[], notes: [] as string[] };
     try {
       if (format === 'topstep' || format === 'unknown') {
         const rows = parseTopstepCsv(text, tz);
-        const accountId = chosenAccount();
+        const accountId = accountForFile(index);
         if (!accountId) throw new Error('Pick the account these trades belong to.');
         const { added, skipped } = importRows(accountId, file.originalname, rows);
         backfillMarket(rows);
@@ -331,7 +343,7 @@ app.post('/api/import', upload.array('files'), (req, res) => {
     }
   }
   const last = results.map((r) => (r as { accountId?: number }).accountId).filter(Boolean).pop();
-  res.json({ accountId: last ?? picked ?? null, results });
+  res.json({ accountId: last ?? null, results });
 });
 
 app.get('/api/imports', (_req, res) => {

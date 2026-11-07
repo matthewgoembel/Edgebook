@@ -407,6 +407,14 @@ table.data tbody tr.click:hover { background: #faf9fd; }
 }
 .drop:hover, .drop.drag { border-color: var(--primary); background: var(--primary-soft); }
 
+.upload-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.upload-row { border: 1px solid var(--line-strong); border-radius: 9px; padding: 9px 12px; }
+.upload-row.bad { border-color: var(--red); background: var(--red-tint); }
+.upload-name { font-weight: 500; overflow-wrap: anywhere; }
+.upload-account { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.upload-account > * { flex: 1 1 150px; }
+.upload-new-accounts { margin-top: 12px; }
+
 .login-page { min-height: 100%; display: grid; place-items: center; padding: 20px; background: var(--nav); }
 .login-card { width: min(360px, 100%); background: #fff; border-radius: 14px; padding: 26px; }
 .login-logo { display: flex; justify-content: center; margin-bottom: 22px; color: var(--nav); }
