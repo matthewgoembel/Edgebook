@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, duration, longDate, money, MOODS, pct, profitFactorLabel, signClass, useFilters, filterQuery } from '../lib';
 import { EquityArea } from './charts';
-import { Modal, ModalHeader, StatusPill } from './ui';
+import { CopyBadge, Modal, ModalHeader, StatusPill } from './ui';
 
 function useRefreshAll() {
   const qc = useQueryClient();
@@ -453,7 +453,7 @@ export function DayModal({ date, onClose }: { date: string; onClose: () => void 
                       {data.trades.map((t: any) => (
                         <tr key={t.id} className="click" onClick={() => go(`/trades/${t.id}`)}>
                           <td>{t.open_time}</td>
-                          <td><span className="sym-pill">{t.symbol}</span></td>
+                          <td><span className="sym-pill">{t.symbol}</span><CopyBadge copies={t.copies} /></td>
                           <td>{t.side.toUpperCase()}</td>
                           <td>{t.contract}</td>
                           <td><StatusPill status={t.status} /></td>

@@ -1,5 +1,5 @@
 import { db, getSettings } from './db.ts';
-import type { TradeRow } from './metrics.ts';
+import { memberIds, mergeCopies, tradeOutcome, type TradeRow } from './metrics.ts';
 import { buildPatterns, toPositions, type DayFacts, type TradeExtras } from './analysis.ts';
 import { dayContext, entryContext, feedFor, sessionBars } from './market.ts';
 import { zonedTs } from './time.ts';
@@ -57,6 +57,28 @@ export function loadTrades(f: Filters = {}): TradeRow[] {
   if (dayCol === 'session_date') for (const r of rows) r.date = r.session_date;
   return rows;
 }
+
+/**
+ * The journal's view of your trades: the same trade across accounts is one trade.
+ * Filters that look at a single row run after merging, so a tag or result on one account keeps the whole trade.
+ */
+export function loadJournal(f: Filters = {}) {
+  const { status, tagId, strategyId, ...base } = f;
+  const rows = loadTrades(base);
+  const merged = getSettings().merge_copies === '0' ? rows : mergeCopies(rows);
+  if (!status && !tagId && !strategyId) return merged;
+  const be = beThreshold();
+  const tagged = tagId ? new Set((db.prepare('SELECT trade_id FROM trade_tags WHERE tag_id = ?').all(tagId) as { trade_id: number }[]).map((r) => r.trade_id)) : null;
+  const strategyRows = strategyId ? new Set((db.prepare('SELECT id FROM trades WHERE strategy_id = ?').all(strategyId) as { id: number }[]).map((r) => r.id)) : null;
+  return merged.filter(
+    (t) =>
+      (!status || tradeOutcome(t, be) === status) &&
+      (!tagged || memberIds(t).some((id) => tagged.has(id))) &&
+      (!strategyRows || memberIds(t).some((id) => strategyRows.has(id))),
+  );
+}
+
+export const findJournalTrade = (id: number) => loadJournal().find((t) => memberIds(t).includes(id));
 
 export function tagsByTrade() {
   const rows = db

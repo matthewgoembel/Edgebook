@@ -231,6 +231,7 @@ CREATE INDEX IF NOT EXISTS idx_broker_cash_account ON broker_cash(account_id);
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   be_threshold: '75',
+  merge_copies: '1',
   timezone: 'America/New_York',
   day_mode: 'calendar',
   ai_model: 'claude-opus-5-5',

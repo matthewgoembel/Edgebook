@@ -228,6 +228,7 @@ table.data tbody tr.click:hover { background: #faf9fd; }
 .status.win { background: var(--green-soft); color: var(--green-dark); }
 .status.loss { background: var(--red-tint); color: var(--red-dark); }
 .status.be { background: var(--blue-soft); color: var(--blue); }
+.copy-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 9px; background: var(--chip); color: var(--primary-dark); font-size: 11px; font-weight: 500; }
 .sym-pill { background: #f1eff7; padding: 4px 9px; border-radius: 12px; font-size: 12.5px; }
 .scale { position: relative; width: 84px; height: 10px; }
 .scale::before { content: ''; position: absolute; left: 0; right: 0; top: 4.5px; height: 1px; background: var(--green); }

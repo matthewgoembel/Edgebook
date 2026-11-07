@@ -1,4 +1,4 @@
-import { outcome, type Outcome, type TradeRow } from './metrics.ts';
+import { groupIntoPositions, memberIds, outcome, type Outcome, type TradeRow } from './metrics.ts';
 import { weekday } from './time.ts';
 
 /**
@@ -30,6 +30,7 @@ export interface Position {
   mistakes: string[];
   setups: string[];
   strategy: string | null;
+  copies: number;
   entryType: string | null;
   plannedRisk: number | null;
   withVwap: boolean | null;
@@ -57,20 +58,7 @@ export interface TradeExtras {
 }
 
 export function toPositions(trades: TradeRow[], be: number, extras?: TradeExtras): Position[] {
-  const sorted = [...trades].sort((a, b) => a.entered_ts - b.entered_ts || a.id - b.id);
-  const groups: TradeRow[][] = [];
-  for (const t of sorted) {
-    const open = groups.findLast(
-      (g) =>
-        g[0].account_id === t.account_id &&
-        g[0].date === t.date &&
-        g[0].symbol === t.symbol &&
-        g[0].side === t.side &&
-        t.entered_ts <= Math.max(...g.map((r) => r.exited_ts)),
-    );
-    if (open) open.push(t);
-    else groups.push([t]);
-  }
+  const groups = groupIntoPositions(trades);
 
   const lastByDay = new Map<string, Position>();
   const seqByDay = new Map<string, number>();
@@ -87,7 +75,8 @@ export function toPositions(trades: TradeRow[], be: number, extras?: TradeExtras
     const seq = (seqByDay.get(first.date) ?? 0) + 1;
     seqByDay.set(first.date, seq);
     const prior = lastByDay.get(first.date) ?? null;
-    const allTags = rows.flatMap((r) => extras?.tags.get(r.id) ?? []);
+    const allTags = rows.flatMap(memberIds).flatMap((id) => extras?.tags.get(id) ?? []);
+    const copies = Math.max(...rows.map((r) => r.copies ?? 1));
     const unique = (cat?: string) => [...new Set(allTags.filter((x) => !cat || x.category === cat).map((x) => x.name))];
     const entry = extras?.entry?.get(first.id);
     const position: Position = {
@@ -107,7 +96,7 @@ export function toPositions(trades: TradeRow[], be: number, extras?: TradeExtras
       net,
       gross: rows.reduce((a, r) => a + r.gross_pnl, 0),
       points: first.side === 'Long' ? avgExit - avgEntry : avgEntry - avgExit,
-      outcome: outcome(net, be),
+      outcome: outcome(net / copies, be),
       seq,
       prev: prior?.outcome ?? null,
       minutesSincePrev: prior ? (openTs - prior.closeTs) / 60000 : null,
@@ -115,6 +104,7 @@ export function toPositions(trades: TradeRow[], be: number, extras?: TradeExtras
       mistakes: unique('mistake'),
       setups: unique('setup'),
       strategy: first.strategy_id ? (extras?.strategies.get(first.strategy_id) ?? null) : null,
+      copies,
       entryType: first.entry_type,
       plannedRisk: rows.every((r) => r.risk_amount !== null) ? rows.reduce((a, r) => a + r.risk_amount!, 0) : null,
       withVwap: entry?.withVwap ?? null,
@@ -243,7 +233,10 @@ export function buildPatterns(positions: Position[], facts: Map<string, DayFacts
     {
       key: 'size',
       title: 'Position size',
-      rows: bucket(positions, (p) => `${p.symbol} × ${p.qty <= 1 ? '1' : p.qty <= 3 ? '2–3' : p.qty <= 5 ? '4–5' : '6+'}`).sort((a, b) => a.label.localeCompare(b.label)),
+      rows: bucket(positions, (p) => {
+        const size = p.qty / p.copies;
+        return `${p.symbol} × ${size <= 1 ? '1' : size <= 3 ? '2–3' : size <= 5 ? '4–5' : '6+'}`;
+      }).sort((a, b) => a.label.localeCompare(b.label)),
     },
     {
       key: 'vwap',

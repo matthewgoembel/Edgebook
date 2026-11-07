@@ -6,8 +6,8 @@ import crypto from 'node:crypto';
 import multer from 'multer';
 import { DATA_DIR, ROOT, UPLOAD_DIR, db, folderId, getSettings, setSetting } from './db.ts';
 import { parseTopstepCsv, pointValue, rootSymbol, round2, type ParsedTrade } from './csv.ts';
-import { balanceSeries, dailyStats, edgeScore, netRoi, outcome, rMultiple, summarize, tradeInsights, type TradeRow } from './metrics.ts';
-import { analyze, attachmentsFor, beThreshold, checklistFor, filtersFromQuery, loadTrades, primarySymbols, strategyNames, tagsByTrade } from './repo.ts';
+import { balanceSeries, dailyStats, edgeScore, memberIds, netRoi, rMultiple, summarize, tradeInsights, tradeOutcome, type TradeRow } from './metrics.ts';
+import { analyze, attachmentsFor, beThreshold, checklistFor, filtersFromQuery, findJournalTrade, loadJournal, loadTrades, primarySymbols, strategyNames, tagsByTrade } from './repo.ts';
 import { dayContext, ensureBars, entryContext, feedFor, sessionBars } from './market.ts';
 import { today, wallClock, weekday, zonedTs, addDays } from './time.ts';
 import { explainError, failInterruptedReports, hasAiKey, startReport, streamChat, testKey } from './ai.ts';
@@ -43,12 +43,18 @@ const param = (req: Request, name: string) => String(req.params[name]);
 function tradeView(t: TradeRow, be: number, flags: string[], tags: { id: number; name: string; category: string }[]) {
   return {
     ...t,
-    status: outcome(t.net_pnl, be),
+    status: tradeOutcome(t, be),
     net_roi: netRoi(t),
     r_multiple: rMultiple(t),
     insights: flags,
     tags,
   };
+}
+
+/** A merged trade shows the tags from every account it came from. */
+function tagsOf(t: TradeRow, tags: ReturnType<typeof tagsByTrade>) {
+  const found = memberIds(t).flatMap((id) => tags.get(id) ?? []);
+  return [...new Map(found.map((tag) => [tag.id, tag])).values()];
 }
 
 /* ---------- meta & settings ---------- */
@@ -65,6 +71,7 @@ app.get('/api/meta', (_req, res) => {
     today: today(s.timezone),
     settings: {
       be_threshold: Number(s.be_threshold),
+      merge_copies: s.merge_copies !== '0',
       timezone: s.timezone,
       day_mode: s.day_mode,
       ai_model: s.ai_model,
@@ -76,7 +83,7 @@ app.get('/api/meta', (_req, res) => {
 });
 
 app.put('/api/settings', (req, res) => {
-  const allowed = ['be_threshold', 'timezone', 'day_mode', 'ai_model', 'ai_effort', 'ai_api_key'];
+  const allowed = ['be_threshold', 'merge_copies', 'timezone', 'day_mode', 'ai_model', 'ai_effort', 'ai_api_key'];
   for (const key of allowed) if (key in req.body) setSetting(key, String(req.body[key]).trim());
   res.json({ ok: true });
 });
@@ -359,7 +366,7 @@ app.delete('/api/imports/:id', (req, res) => {
 
 app.get('/api/dashboard', (req, res) => {
   const filters = filtersFromQuery(req.query as Record<string, unknown>);
-  const trades = loadTrades(filters);
+  const trades = loadJournal(filters);
   const be = beThreshold();
   const summary = summarize(trades, be);
   const days = dailyStats(trades, be);
@@ -383,11 +390,11 @@ app.get('/api/dashboard', (req, res) => {
     edge: edgeScore(summary, days),
     progress,
     balance: balanceSeries(days, start, txns),
-    recent: [...trades].reverse().slice(0, 20).map((t) => tradeView(t, be, flags.get(t.id) ?? [], tags.get(t.id) ?? [])),
+    recent: [...trades].reverse().slice(0, 20).map((t) => tradeView(t, be, flags.get(t.id) ?? [], tagsOf(t, tags))),
     scatter: trades.map((t) => ({
       id: t.id,
       net: t.net_pnl,
-      status: outcome(t.net_pnl, be),
+      status: tradeOutcome(t, be),
       duration: t.duration_sec,
       minutes: Number(t.open_time.slice(0, 2)) * 60 + Number(t.open_time.slice(3, 5)),
     })),
@@ -420,14 +427,14 @@ function progressMap() {
 
 app.get('/api/trades', (req, res) => {
   const q = req.query as Record<string, string>;
-  const trades = loadTrades(filtersFromQuery(q));
+  const trades = loadJournal(filtersFromQuery(q));
   const be = beThreshold();
   const summary = summarize(trades, be);
   const tags = tagsByTrade();
   const flags = tradeInsights(trades, summary, be);
   const days = dailyStats(trades, be);
   const notes = new Set((db.prepare("SELECT trade_id FROM notes WHERE type = 'trade' AND body_text != ''").all() as { trade_id: number }[]).map((r) => r.trade_id));
-  const views = trades.map((t) => ({ ...tradeView(t, be, flags.get(t.id) ?? [], tags.get(t.id) ?? []), has_note: notes.has(t.id) }));
+  const views = trades.map((t) => ({ ...tradeView(t, be, flags.get(t.id) ?? [], tagsOf(t, tags)), has_note: memberIds(t).some((id) => notes.has(id)) }));
   const sortKey = (q.sort || 'entered_ts') as keyof (typeof views)[number];
   const dir = q.dir === 'asc' ? 1 : -1;
   views.sort((a, b) => {
@@ -505,18 +512,28 @@ app.get('/api/trades/:id', async (req, res) => {
   if (!row) return void res.status(404).json({ error: 'Trade not found.' });
   const be = beThreshold();
   await ensureBars(row.symbol, [row.date]);
-  const all = loadTrades();
+  const all = loadJournal();
   const summary = summarize(all, be);
-  const dayTrades = all.filter((t) => t.date === row.date).sort((a, b) => a.entered_ts - b.entered_ts);
+  const trade = all.find((t) => memberIds(t).includes(id)) ?? row;
+  const dayTrades = all.filter((t) => t.date === trade.date).sort((a, b) => a.entered_ts - b.entered_ts);
   const flags = tradeInsights(all, summary, be);
   const tags = tagsByTrade();
-  const note = db.prepare("SELECT * FROM notes WHERE type = 'trade' AND trade_id = ?").get(id);
+  const members = memberIds(trade);
+  const note = db.prepare(`SELECT * FROM notes WHERE type = 'trade' AND trade_id IN (${members.map(() => '?').join(',')}) ORDER BY trade_id = ? DESC LIMIT 1`).get(...members, id) as { trade_id: number } | undefined;
+  const accountRows = (trade.copies ?? 1) > 1
+    ? (db
+        .prepare(`SELECT a.id, a.name, SUM(t.qty) qty, SUM(t.net_pnl) net FROM trades t JOIN accounts a ON a.id = t.account_id WHERE t.id IN (${members.map(() => '?').join(',')}) GROUP BY a.id ORDER BY a.id`)
+        .all(...members) as { id: number; name: string; qty: number; net: number }[])
+    : [];
   const { bars, interval } = sessionBars(row.symbol, row.date);
   const tz = getSettings().timezone;
-  const idx = dayTrades.findIndex((t) => t.id === id);
+  const idx = dayTrades.findIndex((t) => t.id === trade.id);
   res.json({
-    trade: tradeView(row, be, flags.get(id) ?? [], tags.get(id) ?? []),
+    trade: tradeView(trade, be, flags.get(trade.id) ?? [], tagsOf(trade, tags)),
+    accounts: accountRows,
+    ownRisk: row.risk_amount,
     note: note ?? null,
+    noteTradeId: note?.trade_id ?? trade.id,
     attachments: attachmentsFor('trade', String(id)),
     market: { bars, interval, entry: bars.length ? entryContext(row, bars, interval, zonedTs(row.date, 570, tz)) : null },
     siblings: dayTrades.map((t) => ({ id: t.id, side: t.side, symbol: t.symbol, qty: t.qty, entered_ts: t.entered_ts, exited_ts: t.exited_ts, entry_price: t.entry_price, exit_price: t.exit_price, net_pnl: t.net_pnl })),
@@ -533,20 +550,24 @@ app.patch('/api/trades/:id', (req, res) => {
   if ('strategy_id' in b) db.prepare('UPDATE trades SET strategy_id = ? WHERE id = ?').run(b.strategy_id || null, id);
   if ('risk_amount' in b) db.prepare('UPDATE trades SET risk_amount = ? WHERE id = ?').run(b.risk_amount === '' || b.risk_amount == null ? null : Number(b.risk_amount), id);
   if ('rating' in b) db.prepare('UPDATE trades SET rating = ? WHERE id = ?').run(b.rating || null, id);
-  if (Array.isArray(b.tag_ids)) setTradeTags(Number(id), b.tag_ids);
+  if (Array.isArray(b.tag_ids)) setTradeTags(findJournalTrade(Number(id)) ?? { id: Number(id) }, b.tag_ids);
   res.json({ ok: true });
 });
 
-const setTradeTags = db.transaction((id: number, tagIds: number[]) => {
-  db.prepare('DELETE FROM trade_tags WHERE trade_id = ?').run(id);
+const setTradeTags = db.transaction((trade: Pick<TradeRow, 'id' | 'member_ids'>, tagIds: number[]) => {
+  const clear = db.prepare('DELETE FROM trade_tags WHERE trade_id = ?');
+  for (const id of memberIds(trade)) clear.run(id);
   const ins = db.prepare('INSERT OR IGNORE INTO trade_tags (trade_id, tag_id) VALUES (?, ?)');
-  for (const t of tagIds) ins.run(id, t);
+  for (const t of tagIds) ins.run(trade.id, t);
 });
 
 app.post('/api/trades/bulk', (req, res) => {
   const { ids, action, tag_id, strategy_id } = req.body as { ids: number[]; action: string; tag_id?: number; strategy_id?: number };
+  // Acting on a merged trade acts on it in every account.
+  const journal = loadJournal();
+  const rows = ids.flatMap((id) => memberIds(journal.find((t) => memberIds(t).includes(id)) ?? { id }));
   const run = db.transaction(() => {
-    for (const id of ids) {
+    for (const id of rows) {
       if (action === 'delete') db.prepare('DELETE FROM trades WHERE id = ?').run(id);
       if (action === 'tag' && tag_id) db.prepare('INSERT OR IGNORE INTO trade_tags (trade_id, tag_id) VALUES (?, ?)').run(id, tag_id);
       if (action === 'strategy') db.prepare('UPDATE trades SET strategy_id = ? WHERE id = ?').run(strategy_id || null, id);
@@ -573,7 +594,7 @@ app.delete('/api/tags/:id', (req, res) => {
 app.get('/api/strategies', (_req, res) => {
   const be = beThreshold();
   const list = db.prepare('SELECT * FROM strategies ORDER BY name').all() as { id: number }[];
-  res.json(list.map((s) => ({ ...s, stats: summarize(loadTrades({ strategyId: s.id }), be) })));
+  res.json(list.map((s) => ({ ...s, stats: summarize(loadJournal({ strategyId: s.id }), be) })));
 });
 
 app.post('/api/strategies', (req, res) => {
@@ -603,10 +624,10 @@ function tradingDays(accounts?: number[]) {
 app.get('/api/day/:date', async (req, res) => {
   const date = param(req, 'date');
   const filters = filtersFromQuery(req.query as Record<string, unknown>);
-  const trades = loadTrades({ ...filters, from: date, to: date });
+  const trades = loadJournal({ ...filters, from: date, to: date });
   const be = beThreshold();
   const summary = summarize(trades, be);
-  const all = loadTrades(filters);
+  const all = loadJournal(filters);
   const flags = tradeInsights(all, summarize(all, be), be);
   const tags = tagsByTrade();
   const symbol = primarySymbols(trades).get(date);
@@ -628,7 +649,7 @@ app.get('/api/day/:date', async (req, res) => {
     weekday: weekday(date),
     summary,
     intraday,
-    trades: [...trades].reverse().map((t) => tradeView(t, be, flags.get(t.id) ?? [], tags.get(t.id) ?? [])),
+    trades: [...trades].reverse().map((t) => tradeView(t, be, flags.get(t.id) ?? [], tagsOf(t, tags))),
     mood: meta?.mood ?? null,
     mood_note: meta?.mood_note ?? '',
     note: db.prepare("SELECT * FROM notes WHERE type = 'day' AND date = ?").get(date) ?? null,
@@ -843,7 +864,7 @@ app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true 
 
 app.get('/api/reports', (req, res) => {
   const filters = filtersFromQuery(req.query as Record<string, unknown>);
-  const trades = loadTrades(filters);
+  const trades = loadJournal(filters);
   const be = beThreshold();
   const { patterns } = analyze(trades);
   res.json({ summary: summarize(trades, be), days: dailyStats(trades, be), groups: patterns.groups, dayGroups: patterns.days, behavior: patterns.behavior, ranked: patterns.ranked });

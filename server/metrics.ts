@@ -32,6 +32,9 @@ export interface TradeRow {
   entry_type: string | null;
   exit_type: string | null;
   stop_price: number | null;
+  /** Set on a merged trade: how many accounts took it, and the rows it was built from. */
+  copies?: number;
+  member_ids?: number[];
 }
 
 export type Outcome = 'win' | 'loss' | 'be';
@@ -42,6 +45,11 @@ export function outcome(net: number, beThreshold: number): Outcome {
   if (net < -beThreshold) return 'loss';
   return 'be';
 }
+
+/** The break-even band is per account, so a merged trade is judged on what each account made. */
+export const tradeOutcome = (t: Pick<TradeRow, 'net_pnl' | 'copies'>, beThreshold: number) => outcome(t.net_pnl / (t.copies ?? 1), beThreshold);
+
+export const memberIds = (t: Pick<TradeRow, 'id' | 'member_ids'>) => t.member_ids ?? [t.id];
 
 export function netRoi(t: Pick<TradeRow, 'net_pnl' | 'entry_price' | 'point_value' | 'qty'>) {
   const notional = t.entry_price * t.point_value * t.qty;
@@ -156,8 +164,8 @@ export function dailyStats(trades: TradeRow[], be: number): DayStat[] {
 }
 
 function summarizeRows(trades: TradeRow[], be: number) {
-  const winners = trades.filter((t) => outcome(t.net_pnl, be) === 'win');
-  const losers = trades.filter((t) => outcome(t.net_pnl, be) === 'loss');
+  const winners = trades.filter((t) => tradeOutcome(t, be) === 'win');
+  const losers = trades.filter((t) => tradeOutcome(t, be) === 'loss');
   const grossWin = sum(winners.map((t) => t.net_pnl));
   const grossLoss = Math.abs(sum(losers.map((t) => t.net_pnl)));
   const decided = winners.length + losers.length;
@@ -228,11 +236,102 @@ export function summarize(trades: TradeRow[], be: number): Summary {
     bestDay: best ? { date: best.date, net: best.net } : null,
     worstDay: worst ? { date: worst.date, net: worst.net } : null,
     avgDayNet: days.length ? s.net / days.length : 0,
-    maxWinStreak: streaks(sorted, (t) => toOutcome(outcome(t.net_pnl, be))),
-    maxLossStreak: streaks(sorted, (t) => toLoss(outcome(t.net_pnl, be))),
+    maxWinStreak: streaks(sorted, (t) => toOutcome(tradeOutcome(t, be))),
+    maxLossStreak: streaks(sorted, (t) => toLoss(tradeOutcome(t, be))),
     maxDayWinStreak: streaks(dayOutcomes, toOutcome),
     maxDayLossStreak: streaks(dayOutcomes, toLoss),
   };
+}
+
+/** Rows that overlap in one account are one position: a single trade split across partial fills. */
+export function groupIntoPositions(trades: TradeRow[]) {
+  const sorted = [...trades].sort((a, b) => a.entered_ts - b.entered_ts || a.id - b.id);
+  const groups: TradeRow[][] = [];
+  for (const t of sorted) {
+    const open = groups.findLast(
+      (g) =>
+        g[0].account_id === t.account_id &&
+        g[0].date === t.date &&
+        g[0].symbol === t.symbol &&
+        g[0].side === t.side &&
+        t.entered_ts <= Math.max(...g.map((r) => r.exited_ts)),
+    );
+    if (open) open.push(t);
+    else groups.push([t]);
+  }
+  return groups;
+}
+
+// Copiers fill within moments of the lead, on the same side, at nearly the same price.
+const COPY_WINDOW_MS = 10_000;
+const COPY_PRICE_TOLERANCE = 0.0005;
+const FULL_SIZE: Record<string, string> = { MNQ: 'NQ', MES: 'ES', MYM: 'YM', M2K: 'RTY', MGC: 'GC', MCL: 'CL' };
+
+interface CopyCluster {
+  accounts: Set<number>;
+  key: string;
+  openTs: number;
+  closeTs: number;
+  entry: number;
+  groups: TradeRow[][];
+}
+
+function combine(groups: TradeRow[][]): TradeRow {
+  const lead = [...groups].sort((a, b) => a[0].account_id - b[0].account_id)[0];
+  const rows = groups.flat();
+  const add = (pick: (r: TradeRow) => number) => rows.reduce((total, r) => total + pick(r), 0);
+  const qty = add((r) => r.qty);
+  const planned = lead.filter((r) => r.risk_amount !== null);
+  const riskPerContract = planned.length ? planned.reduce((a, r) => a + r.risk_amount!, 0) / planned.reduce((a, r) => a + r.qty, 0) : null;
+  return {
+    ...lead[0],
+    qty,
+    entry_price: add((r) => r.entry_price * r.qty) / qty,
+    exit_price: add((r) => r.exit_price * r.qty) / qty,
+    entered_ts: Math.min(...lead.map((r) => r.entered_ts)),
+    exited_ts: Math.max(...lead.map((r) => r.exited_ts)),
+    gross_pnl: Math.round(add((r) => r.gross_pnl) * 100) / 100,
+    fees: add((r) => r.fees),
+    commissions: add((r) => r.commissions),
+    net_pnl: Math.round(add((r) => r.net_pnl) * 100) / 100,
+    risk_amount: riskPerContract === null ? null : riskPerContract * qty,
+    strategy_id: rows.find((r) => r.strategy_id)?.strategy_id ?? null,
+    copies: groups.length,
+    member_ids: rows.map((r) => r.id),
+  };
+}
+
+/**
+ * The same trade in several accounts becomes one trade carrying the combined size and P&L.
+ * Matching compares whole positions, so accounts can split the same fills into different rows.
+ * A trade only one account took stays as it is.
+ */
+export function mergeCopies(trades: TradeRow[]) {
+  if (new Set(trades.map((t) => t.account_id)).size < 2) return trades;
+  const clusters: CopyCluster[] = [];
+  const startOf = (g: TradeRow[]) => Math.min(...g.map((r) => r.entered_ts));
+  const positions = groupIntoPositions(trades).sort((a, b) => startOf(a) - startOf(b));
+  for (const rows of positions) {
+    const first = rows[0];
+    const size = rows.reduce((a, r) => a + r.qty, 0);
+    const entry = rows.reduce((a, r) => a + r.entry_price * r.qty, 0) / size;
+    const openTs = startOf(rows);
+    const closeTs = Math.max(...rows.map((r) => r.exited_ts));
+    const key = `${first.date}|${first.side}|${FULL_SIZE[first.symbol] ?? first.symbol}`;
+    const match = clusters.findLast(
+      (c) =>
+        c.key === key &&
+        !c.accounts.has(first.account_id) &&
+        Math.abs(c.openTs - openTs) <= COPY_WINDOW_MS &&
+        Math.abs(c.closeTs - closeTs) <= COPY_WINDOW_MS &&
+        Math.abs(c.entry - entry) / c.entry <= COPY_PRICE_TOLERANCE,
+    );
+    if (match) {
+      match.accounts.add(first.account_id);
+      match.groups.push(rows);
+    } else clusters.push({ accounts: new Set([first.account_id]), key, openTs, closeTs, entry, groups: [rows] });
+  }
+  return clusters.flatMap((c) => (c.groups.length > 1 ? [combine(c.groups)] : c.groups[0])).sort((a, b) => a.entered_ts - b.entered_ts || a.id - b.id);
 }
 
 function interpolate(value: number, points: [number, number][]) {
@@ -291,8 +390,9 @@ export function edgeScore(summary: Summary, days: DayStat[]): EdgeScore {
 export function tradeInsights(trades: TradeRow[], summary: Summary, be: number) {
   const result = new Map<number, string[]>();
   const avgQty = new Map<string, number>();
+  const sizePerAccount = (t: TradeRow) => t.qty / (t.copies ?? 1);
   for (const sym of new Set(trades.map((t) => t.symbol))) {
-    avgQty.set(sym, avg(trades.filter((t) => t.symbol === sym).map((t) => t.qty)));
+    avgQty.set(sym, avg(trades.filter((t) => t.symbol === sym).map(sizePerAccount)));
   }
   const byDay = new Map<string, TradeRow[]>();
   for (const t of trades) (byDay.get(t.date) ?? byDay.set(t.date, []).get(t.date)!).push(t);
@@ -301,9 +401,9 @@ export function tradeInsights(trades: TradeRow[], summary: Summary, be: number) 
     const sorted = [...rows].sort((a, b) => a.entered_ts - b.entered_ts);
     sorted.forEach((t, i) => {
       const flags: string[] = [];
-      const o = outcome(t.net_pnl, be);
+      const o = tradeOutcome(t, be);
       const prior = sorted.slice(0, i).filter((p) => p.exited_ts <= t.entered_ts).sort((a, b) => b.exited_ts - a.exited_ts)[0];
-      if (prior && outcome(prior.net_pnl, be) === 'loss') {
+      if (prior && tradeOutcome(prior, be) === 'loss') {
         const gap = (t.entered_ts - prior.exited_ts) / 60000;
         if (gap <= 3) flags.push(`Re-entered ${gap < 1 ? 'under a minute' : `${gap.toFixed(0)} min`} after a loss`);
       }
@@ -313,7 +413,7 @@ export function tradeInsights(trades: TradeRow[], summary: Summary, be: number) 
       if (o === 'win' && summary.avgWin && t.net_pnl < summary.avgWin * 0.25) flags.push('Winner far below your average win');
       if (o === 'win' && summary.avgWin && t.net_pnl > summary.avgWin * 2) flags.push(`Winner was ${(t.net_pnl / summary.avgWin).toFixed(1)}× your average win`);
       const q = avgQty.get(t.symbol) ?? 0;
-      if (q && t.qty > q * 1.5) flags.push(`Size ${t.qty} vs your usual ${q.toFixed(1)} on ${t.symbol}`);
+      if (q && sizePerAccount(t) > q * 1.5) flags.push(`Size ${sizePerAccount(t)} vs your usual ${q.toFixed(1)} on ${t.symbol}`);
       if (o === 'loss' && summary.avgHoldWin && t.duration_sec > summary.avgHoldWin * 2) {
         flags.push(`Held this loser ${(t.duration_sec / summary.avgHoldWin).toFixed(1)}× as long as your average winner`);
       }

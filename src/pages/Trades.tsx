@@ -4,13 +4,13 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Donut, EquityArea, Gauge } from '../components/charts';
 import { DayStats } from '../components/modals';
-import { Dropdown, FilterBar, Loading, ScaleBar, StatusPill } from '../components/ui';
+import { CopyBadge, Dropdown, FilterBar, Loading, ScaleBar, StatusPill } from '../components/ui';
 import { api, duration, filterQuery, longDate, money, moneyShort, pct, price, profitFactorLabel, signClass, useFilters, useUi, usDate } from '../lib';
 
 const COLUMNS: { key: string; label: string; sort?: string; on?: boolean; num?: boolean; render: (t: any, s: any) => React.ReactNode }[] = [
   { key: 'open', label: 'Open date', sort: 'entered_ts', on: true, render: (t) => usDate(t.date) },
   { key: 'time', label: 'Open time', sort: 'entered_ts', render: (t) => t.open_time },
-  { key: 'symbol', label: 'Symbol', sort: 'symbol', on: true, render: (t) => <b style={{ fontWeight: 500 }}>{t.symbol}</b> },
+  { key: 'symbol', label: 'Symbol', sort: 'symbol', on: true, render: (t) => <><b style={{ fontWeight: 500 }}>{t.symbol}</b><CopyBadge copies={t.copies} /></> },
   { key: 'status', label: 'Status', on: true, render: (t) => <StatusPill status={t.status} /> },
   { key: 'side', label: 'Side', sort: 'side', render: (t) => t.side },
   { key: 'qty', label: 'Size', sort: 'qty', num: true, render: (t) => t.qty },

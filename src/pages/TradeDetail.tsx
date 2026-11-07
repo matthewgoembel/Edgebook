@@ -57,7 +57,7 @@ export default function TradeDetail() {
   const { data: meta } = useQuery<any>({ queryKey: ['meta'], queryFn: () => api('/meta') });
 
   const chartTrades = useMemo(
-    () => (data?.siblings ?? []).map((s: any) => ({ ...s, highlight: s.id === Number(id) })),
+    () => (data?.siblings ?? []).map((s: any) => ({ ...s, highlight: s.id === data.trade.id })),
     [data, id],
   );
   const focus = useMemo<[number, number] | undefined>(() => (data ? [data.trade.entered_ts, data.trade.exited_ts] : undefined), [data]);
@@ -125,8 +125,8 @@ export default function TradeDetail() {
               </select>
             </div>
             <div className="field">
-              <label className="label">Planned risk ($), for R-multiple</label>
-              <input key={t.risk_amount} className="input" type="number" defaultValue={t.risk_amount ?? ''} onBlur={(e) => void patch({ risk_amount: e.target.value })} />
+              <label className="label">Planned risk ($){t.copies > 1 ? ' for one account' : ''}, for R-multiple</label>
+              <input key={data.ownRisk} className="input" type="number" defaultValue={data.ownRisk ?? ''} onBlur={(e) => void patch({ risk_amount: e.target.value })} />
               {t.r_multiple != null && <div className="hint" style={{ marginTop: 4 }}>Realized {t.r_multiple.toFixed(2)}R</div>}
             </div>
             <TagPicker category="setup" label="Setups" trade={t} tags={meta.tags} onChange={(tag_ids) => void patch({ tag_ids })} />
@@ -141,6 +141,17 @@ export default function TradeDetail() {
               ))}
             </div>
           </Card>
+
+          {data.accounts.length > 0 && (
+            <Card title={`Taken in ${data.accounts.length} accounts`}>
+              {data.accounts.map((a: any) => (
+                <div className="kv" key={a.id}>
+                  <span>{a.name} × {a.qty}</span>
+                  <span className={signClass(a.net)}>{money(a.net)}</span>
+                </div>
+              ))}
+            </Card>
+          )}
 
           {t.insights.length > 0 && (
             <Card title="Insights">
@@ -165,7 +176,7 @@ export default function TradeDetail() {
               html={data.note?.body_html ?? ''}
               uploadKey={`trade-${id}`}
               placeholder="Why did you take this? Where was your invalidation?"
-              onSave={(body) => api(`/notes/trade/${id}`, { method: 'PUT', json: body })}
+              onSave={(body) => api(`/notes/trade/${data.noteTradeId}`, { method: 'PUT', json: body })}
             />
           </Card>
           <Card title="Screenshots">

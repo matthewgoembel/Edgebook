@@ -6,7 +6,7 @@ import { EquityArea, PriceChart } from '../components/charts';
 import { RichEditor } from '../components/Editor';
 import { ScreenshotGrid } from '../components/media';
 import { ChecklistEditor, DayStats, MoodPicker } from '../components/modals';
-import { Card, Loading, StatusPill } from '../components/ui';
+import { Card, CopyBadge, Loading, StatusPill } from '../components/ui';
 import { api, duration, filterQuery, longDate, money, price, signClass, useFilters } from '../lib';
 
 function MarketCard({ c }: { c: any }) {
@@ -119,7 +119,7 @@ export default function DayPage() {
                     {data.trades.map((t: any) => (
                       <tr key={t.id} className="click" onClick={() => navigate(`/trades/${t.id}`)}>
                         <td>{t.open_time}</td>
-                        <td><span className="sym-pill">{t.symbol}</span></td>
+                        <td><span className="sym-pill">{t.symbol}</span><CopyBadge copies={t.copies} /></td>
                         <td>{t.side.toUpperCase()}</td>
                         <td className="num">{t.qty}</td>
                         <td className="num">{price(t.entry_price)}</td>

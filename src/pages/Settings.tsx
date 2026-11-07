@@ -96,6 +96,13 @@ export default function SettingsPage() {
                 <option value="session">Topstep&apos;s trading day (rolls over at 6pm ET)</option>
               </select>
             </div>
+            <div className="field">
+              <label className="label">Same trade in several accounts</label>
+              <select className="select" value={form.merge_copies ? '1' : '0'} onChange={(e) => void save({ merge_copies: e.target.value })}>
+                <option value="1">Count as one trade with combined P&amp;L</option>
+                <option value="0">Count separately in each account</option>
+              </select>
+            </div>
             <div className="field" style={{ marginBottom: 0 }}>
               <label className="label">Time zone</label>
               <input className="input" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} onBlur={(e) => void save({ timezone: e.target.value })} />

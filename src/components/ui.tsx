@@ -198,6 +198,12 @@ export function ModalHeader({ title, onClose }: { title: ReactNode; onClose: () 
   );
 }
 
+/** Marks a trade that was taken in several accounts. */
+export function CopyBadge({ copies }: { copies?: number }) {
+  if (!copies || copies < 2) return null;
+  return <span className="copy-badge" title={`Taken in ${copies} accounts. Size and P&L are combined.`}>×{copies}</span>;
+}
+
 export function StatusPill({ status }: { status: 'win' | 'loss' | 'be' }) {
   return <span className={`status ${status}`}>{status === 'win' ? 'WIN' : status === 'loss' ? 'LOSS' : 'BE'}</span>;
 }

@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import { z } from 'zod';
 import { db, getSettings, UPLOAD_DIR } from './db.ts';
 import { dailyStats, summarize } from './metrics.ts';
-import { analyze, attachmentsFor, beThreshold, checklistFor, loadTrades, primarySymbols, tagsByTrade } from './repo.ts';
+import { analyze, attachmentsFor, beThreshold, checklistFor, loadJournal, primarySymbols, tagsByTrade } from './repo.ts';
 import { dayContext } from './market.ts';
 import { addDays, today, weekday } from './time.ts';
 import type { Position } from './analysis.ts';
@@ -82,6 +82,12 @@ How to work:
 
 Write like a sharp, honest trading coach: short sentences, no filler, no flattery, no generic trading psychology. Use the trader's own language and setups when they appear in the notes.`;
 
+function copyNote(positions: Position[]) {
+  return positions.some((p) => p.copies > 1)
+    ? 'Some positions were copied across several accounts. Each is shown once, and its contracts and dollars are the combined total, so judge size and results per account by dividing by the account count.\n\n'
+    : '';
+}
+
 function positionLine(p: Position) {
   const hold = p.holdSec < 90 ? `${Math.round(p.holdSec)}s` : `${(p.holdSec / 60).toFixed(1)}m`;
   const parts = [
@@ -103,6 +109,7 @@ function positionLine(p: Position) {
   if (p.setups.length) parts.push(`setup: ${p.setups.join('/')}`);
   if (p.mistakes.length) parts.push(`mistake: ${p.mistakes.join('/')}`);
   if (p.strategy) parts.push(`strategy: ${p.strategy}`);
+  if (p.copies > 1) parts.push(`copied across ${p.copies} accounts`);
   if (p.entryType) parts.push(`${p.entryType.toLowerCase()} entry`);
   if (p.plannedRisk) parts.push(`planned risk $${p.plannedRisk.toFixed(0)} (${(p.net / p.plannedRisk).toFixed(2)}R)`);
   return parts.join(' | ');
@@ -187,10 +194,10 @@ interface Built {
 }
 
 async function buildDaily(date: string, reportId: number): Promise<Built> {
-  const trades = loadTrades({ from: date, to: date });
+  const trades = loadJournal({ from: date, to: date });
   if (!trades.length) throw new Error(`No trades on ${date}.`);
   const baselineFrom = addDays(date, -60);
-  const baseline = loadTrades({ from: baselineFrom, to: addDays(date, -1) });
+  const baseline = loadJournal({ from: baselineFrom, to: addDays(date, -1) });
   const { positions, facts } = analyze(trades);
   const be = beThreshold();
   const day = summarize(trades, be);
@@ -203,7 +210,7 @@ async function buildDaily(date: string, reportId: number): Promise<Built> {
     .prepare(`SELECT trade_id, body_text FROM notes WHERE type = 'trade' AND body_text != '' AND trade_id IN (${trades.map((t) => t.id).join(',')})`)
     .all() as { trade_id: number; body_text: string }[];
 
-  const text = `Review this trading day. Explain what actually happened, judged against the market and this trader's recent behavior, not just the P&L.
+  const text = `${copyNote(positions)}Review this trading day. Explain what actually happened, judged against the market and this trader's recent behavior, not just the P&L.
 
 ## The day
 ${dayBlock(date, facts, symbol)}
@@ -236,7 +243,7 @@ ${screenshots.count ? `${screenshots.count} screenshot(s) follow.` : 'No screens
 }
 
 async function buildRange(kind: string, from: string, to: string, reportId: number): Promise<Built> {
-  const trades = loadTrades({ from, to });
+  const trades = loadJournal({ from, to });
   if (!trades.length) throw new Error('No trades in that date range.');
   // "All history" arrives as an open-ended range, so show the dates actually covered.
   from = trades[0].date;
@@ -253,7 +260,7 @@ async function buildRange(kind: string, from: string, to: string, reportId: numb
   const picks = [...new Set([...ranked.slice(0, 4), ...ranked.slice(-4)].map((d) => d.date))];
   const screenshots = await screenshotBlocks(picks, []);
 
-  const allTime = kind === 'patterns' ? null : summarize(loadTrades({ to: addDays(from, -1) }), be);
+  const allTime = kind === 'patterns' ? null : summarize(loadJournal({ to: addDays(from, -1) }), be);
   const instructions: Record<string, string> = {
     weekly: 'Review this week as a coach would on Friday night. What pattern defined the week, and what is the one change that would have mattered most?',
     monthly: 'Review this month. Show what changed compared with earlier behavior, where the money was truly made and lost, and which days should not have been traded.',
@@ -262,7 +269,7 @@ async function buildRange(kind: string, from: string, to: string, reportId: numb
     custom: 'Review this period. Find what truly drove results and what should change.',
   };
 
-  const text = `${instructions[kind] ?? instructions.custom}
+  const text = `${copyNote(positions)}${instructions[kind] ?? instructions.custom}
 
 Period: ${from} to ${to}. ${summary.days} trading days, ${positions.length} positions (${trades.length} fill rows), net $${summary.net.toFixed(2)}, ${summary.dayWins} green days and ${summary.dayLosses} red.
 ${allTime ? `Before this period: ${allTime.days} days, net $${allTime.net.toFixed(2)}, profit factor ${Number.isFinite(allTime.profitFactor) ? allTime.profitFactor.toFixed(2) : 'n/a'}, average day $${allTime.avgDayNet.toFixed(2)}.` : ''}
@@ -388,7 +395,7 @@ export function failInterruptedReports() {
 }
 
 function chatContext() {
-  const trades = loadTrades();
+  const trades = loadJournal();
   if (!trades.length) return 'The journal has no trades yet.';
   const be = beThreshold();
   const { positions, facts, patterns } = analyze(trades);
@@ -396,7 +403,7 @@ function chatContext() {
   const primary = primarySymbols(trades);
   const recent = days.slice(-30);
   const s = summarize(trades, be);
-  return `Today is ${today(getSettings().timezone)}.
+  return `${copyNote(positions)}Today is ${today(getSettings().timezone)}.
 
 Overall: ${s.days} days, ${positions.length} positions, net $${s.net.toFixed(2)}, ${s.dayWins} green days, ${s.dayLosses} red.
 

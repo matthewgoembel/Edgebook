@@ -35,6 +35,7 @@ Create a key at console.anthropic.com under API Keys and paste it into Settings.
 
 ## Good to know
 
+- **Copy trading:** nothing to set up. When several accounts take the same trade, it counts as one trade with the combined size and P&L, marked with its account count. Pick one account in the filter to see only its side.
 - **Break-even range:** set it to your TradeZella value. It changes win rate, profit factor and the WIN/LOSS/BE labels.
 - **Market data** comes from Yahoo's free feed. It keeps 1-minute bars for about a month and 5-minute bars for about two months, so uploading daily keeps every day charted. Older days have no bars, and the AI relies on your notes and screenshots for those.
 - **Backups:** the server keeps a daily database copy on the volume, holding the last 14. Those live on the same disk as the journal, so use **Settings > Download backup** now and then to keep your own copy. That file does not include screenshots.
