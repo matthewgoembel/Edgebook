@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Rocket, UploadCloud } from 'lucide-react';
+import { Sunrise, UploadCloud } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PnlCalendar } from '../components/Calendar';
@@ -108,7 +108,7 @@ export default function Dashboard() {
           <b>Last import:</b> {lastImport}{' '}
           <a style={{ textDecoration: 'underline', marginLeft: 8, cursor: 'pointer' }} onClick={openImport}>Upload</a>
         </span>
-        <button className="btn primary" onClick={openStartDay}><Rocket size={15} /> Start my day</button>
+        <button className="btn primary" onClick={openStartDay}><Sunrise size={15} /> Daily prep</button>
       </div>
 
       <div className="grid-5">
@@ -122,7 +122,7 @@ export default function Dashboard() {
         </div>
         <div className="card stat-card">
           <div>
-            <div className="stat-label">Trade win % <InfoTip text="Winners ÷ (winners + losers). Break-even trades don't count." /></div>
+            <div className="stat-label">Win rate <InfoTip text="Winners ÷ (winners + losers). Break-even trades don't count." /></div>
             <div className="stat-value">{pct(s.winRate)}</div>
           </div>
           <Gauge value={s.winRate} wins={s.wins} be={s.breakevens} losses={s.losses} />
@@ -136,13 +136,13 @@ export default function Dashboard() {
         </div>
         <div className="card stat-card">
           <div>
-            <div className="stat-label">Day win % <InfoTip text="Green days ÷ (green + red days)" /></div>
+            <div className="stat-label">Green days <InfoTip text="Green days ÷ (green + red days)" /></div>
             <div className="stat-value">{pct(s.dayWinRate)}</div>
           </div>
           <Gauge value={s.dayWinRate} wins={s.dayWins} be={s.dayBreakevens} losses={s.dayLosses} />
         </div>
         <div className="card stat-card" style={{ display: 'block' }}>
-          <div className="stat-label">Avg win/loss trade <InfoTip text="Average winner ÷ average loser" /></div>
+          <div className="stat-label">Win/loss ratio <InfoTip text="Average winner ÷ average loser" /></div>
           <div className="row" style={{ gap: 18 }}>
             <div className="stat-value">{s.avgWinLoss.toFixed(2)}</div>
             <div className="grow">
@@ -170,16 +170,16 @@ export default function Dashboard() {
             </div>
           </div>
         </Card>
-        <Card title="Progress tracker" info="Darker days are days you journaled and finished your checklist.">
+        <Card title="Discipline tracker" info="Darker days are days you journaled and finished your checklist.">
           <ProgressTracker progress={data.progress} onChecklist={openStartDay} />
         </Card>
-        <Card title="Daily net cumulative P&L" info="Running total of net P&L by day">
+        <Card title="Equity curve" info="Running total of net P&L by day">
           <EquityArea data={data.days} dataKey="cum" xKey="date" height={330} xFormat={(d: string) => usDate(d).replace(/\/20(\d\d)$/, '/$1')} />
         </Card>
       </div>
 
       <div className="grid-3">
-        <Card title="Net daily P&L" info="Net result of each day">
+        <Card title="Daily P&L" info="Net result of each day">
           <DailyBars data={data.days} height={280} />
         </Card>
         <section className="card">
@@ -211,7 +211,7 @@ export default function Dashboard() {
             <DrawdownChart data={data.days} height={290} />
           </Card>
           <Card
-            title={tab === 'time' ? 'Trade time performance' : 'Trade duration performance'}
+            title={tab === 'time' ? 'Results by time of day' : 'Results by hold time'}
             right={
               <div className="tabs">
                 <button className={tab === 'time' ? 'on' : ''} onClick={() => setTab('time')}>Time</button>

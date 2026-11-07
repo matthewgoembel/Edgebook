@@ -6,15 +6,15 @@ import {
 } from 'recharts';
 import { duration, money, moneyShort } from '../lib';
 
-const axis = { fontSize: 11.5, fill: '#616161' };
-const grid = '#eeeeee';
+const axis = { fontSize: 11.5, fill: '#5a6474' };
+const grid = '#e7ebf0';
 const shortDate = (d: string) => `${d.slice(5, 7)}/${d.slice(8, 10)}/${d.slice(2, 4)}`;
 
 function MoneyTip({ active, payload, label, labelFmt }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: '#fff', border: '1px solid #e2e2e2', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
-      <div style={{ color: '#616161', marginBottom: 2 }}>{labelFmt ? labelFmt(label) : label}</div>
+    <div style={{ background: '#fff', border: '1px solid #d9dfe7', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
+      <div style={{ color: '#5a6474', marginBottom: 2 }}>{labelFmt ? labelFmt(label) : label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} style={{ fontWeight: 500 }}>
           {money(p.value)}
@@ -41,17 +41,17 @@ export function EquityArea({ data, dataKey, xKey, height = 260, xFormat, showAxi
       <AreaChart data={data} margin={{ top: 8, right: 8, left: showAxis ? 4 : 0, bottom: 0 }}>
         <defs>
           <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4ebf94" stopOpacity={0.75} />
-            <stop offset={off} stopColor="#4ebf94" stopOpacity={0.04} />
-            <stop offset={off} stopColor="#f06363" stopOpacity={0.04} />
-            <stop offset="100%" stopColor="#f06363" stopOpacity={0.75} />
+            <stop offset="0%" stopColor="#22b07d" stopOpacity={0.75} />
+            <stop offset={off} stopColor="#22b07d" stopOpacity={0.04} />
+            <stop offset={off} stopColor="#e5534b" stopOpacity={0.04} />
+            <stop offset="100%" stopColor="#e5534b" stopOpacity={0.75} />
           </linearGradient>
         </defs>
         {showAxis && <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />}
         <XAxis dataKey={xKey} hide={!showAxis || hideX} tick={axis} tickFormatter={xFormat} tickLine={false} axisLine={false} minTickGap={50} />
         <YAxis hide={!showAxis} tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={58} />
         <Tooltip content={<MoneyTip labelFmt={xFormat} />} />
-        <Area type="monotone" dataKey={dataKey} stroke="#6853b5" strokeWidth={1.6} fill={`url(#${id})`} isAnimationActive={false} />
+        <Area type="monotone" dataKey={dataKey} stroke="#2f5fd0" strokeWidth={1.6} fill={`url(#${id})`} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -64,11 +64,11 @@ export function DailyBars({ data, height = 260 }: { data: { date: string; net: n
         <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" tick={axis} tickFormatter={shortDate} tickLine={false} axisLine={false} minTickGap={50} />
         <YAxis tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={58} />
-        <Tooltip content={<MoneyTip labelFmt={shortDate} />} cursor={{ fill: 'rgba(104,83,181,0.06)' }} />
+        <Tooltip content={<MoneyTip labelFmt={shortDate} />} cursor={{ fill: 'rgba(47,95,208,0.06)' }} />
         <ReferenceLine y={0} stroke="#c9c9c9" />
         <Bar dataKey="net" isAnimationActive={false} maxBarSize={14}>
           {data.map((d) => (
-            <Cell key={d.date} fill={d.net >= 0 ? '#4ebf94' : '#f06363'} />
+            <Cell key={d.date} fill={d.net >= 0 ? '#22b07d' : '#e5534b'} />
           ))}
         </Bar>
       </BarChart>
@@ -82,15 +82,15 @@ export function DrawdownChart({ data, height = 290 }: { data: { date: string; dr
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
         <defs>
           <linearGradient id="ddFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f06363" stopOpacity={0.05} />
-            <stop offset="100%" stopColor="#f06363" stopOpacity={0.5} />
+            <stop offset="0%" stopColor="#e5534b" stopOpacity={0.05} />
+            <stop offset="100%" stopColor="#e5534b" stopOpacity={0.5} />
           </linearGradient>
         </defs>
         <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" tick={axis} tickFormatter={shortDate} tickLine={false} axisLine={false} minTickGap={50} />
         <YAxis tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={58} />
         <Tooltip content={<MoneyTip labelFmt={shortDate} />} />
-        <Area type="monotone" dataKey="drawdown" stroke="#6853b5" strokeWidth={1.6} fill="url(#ddFill)" isAnimationActive={false} />
+        <Area type="monotone" dataKey="drawdown" stroke="#2f5fd0" strokeWidth={1.6} fill="url(#ddFill)" isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -105,8 +105,8 @@ export function BalanceChart({ data, height = 260 }: { data: { date: string; bal
         <YAxis tick={axis} tickFormatter={(v) => moneyShort(v)} tickLine={false} axisLine={false} width={62} />
         <Tooltip content={<MoneyTip labelFmt={shortDate} />} />
         <Legend verticalAlign="top" align="left" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
-        <Line name="Account balance" type="monotone" dataKey="balance" stroke="#6853b5" strokeWidth={1.8} dot={false} isAnimationActive={false} />
-        <Line name="Deposits / withdrawals" type="monotone" dataKey="flow" stroke="#f06363" strokeWidth={1.4} dot={false} isAnimationActive={false} />
+        <Line name="Account balance" type="monotone" dataKey="balance" stroke="#2f5fd0" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+        <Line name="Deposits / withdrawals" type="monotone" dataKey="flow" stroke="#e5534b" strokeWidth={1.4} dot={false} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -118,18 +118,18 @@ export function EdgeRadar({ parts }: { parts: { label: string; value: number; di
       <RadarChart data={parts} outerRadius="74%">
         <defs>
           <linearGradient id="radarFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6853b5" stopOpacity={0.7} />
-            <stop offset="100%" stopColor="#6853b5" stopOpacity={0.15} />
+            <stop offset="0%" stopColor="#2f5fd0" stopOpacity={0.7} />
+            <stop offset="100%" stopColor="#2f5fd0" stopOpacity={0.15} />
           </linearGradient>
         </defs>
-        <PolarGrid stroke="#ececf2" />
-        <PolarAngleAxis dataKey="label" tick={{ fontSize: 12.5, fill: '#4a4a4a' }} />
+        <PolarGrid stroke="#e7ebf0" />
+        <PolarAngleAxis dataKey="label" tick={{ fontSize: 12.5, fill: '#47515f' }} />
         <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-        <Radar dataKey="value" stroke="#6853b5" strokeWidth={1.5} fill="url(#radarFill)" dot={{ r: 3, fill: '#fff', stroke: '#6853b5', strokeWidth: 1.5 }} isAnimationActive={false} />
+        <Radar dataKey="value" stroke="#2f5fd0" strokeWidth={1.5} fill="url(#radarFill)" dot={{ r: 3, fill: '#fff', stroke: '#2f5fd0', strokeWidth: 1.5 }} isAnimationActive={false} />
         <Tooltip
           content={({ active, payload }: any) =>
             active && payload?.length ? (
-              <div style={{ background: '#fff', border: '1px solid #e2e2e2', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
+              <div style={{ background: '#fff', border: '1px solid #d9dfe7', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
                 <b style={{ fontWeight: 500 }}>{payload[0].payload.label}</b>: {payload[0].payload.display} ({Math.round(payload[0].payload.value)}/100)
               </div>
             ) : null
@@ -140,7 +140,7 @@ export function EdgeRadar({ parts }: { parts: { label: string; value: number; di
   );
 }
 
-const statusColor = { win: '#4ebf94', loss: '#f06363', be: '#2959db' } as const;
+const statusColor = { win: '#22b07d', loss: '#e5534b', be: '#64748b' } as const;
 
 export function PerformanceScatter({ data, x, height = 300 }: { data: any[]; x: 'minutes' | 'duration'; height?: number }) {
   const series = (['win', 'loss', 'be'] as const).map((s) => ({ s, rows: data.filter((d) => d.status === s) }));
@@ -159,7 +159,7 @@ export function PerformanceScatter({ data, x, height = 300 }: { data: any[]; x: 
           cursor={{ strokeDasharray: '3 3' }}
           content={({ active, payload }: any) =>
             active && payload?.length ? (
-              <div style={{ background: '#fff', border: '1px solid #e2e2e2', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
+              <div style={{ background: '#fff', border: '1px solid #d9dfe7', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
                 {fmtX(payload[0].payload[x])}: <b style={{ fontWeight: 500 }}>{money(payload[0].payload.net)}</b>
               </div>
             ) : null
@@ -183,9 +183,9 @@ export function Gauge({ value, wins, be, losses }: { value: number; wins: number
     <div style={{ width: 104 }} title={`${value.toFixed(1)}%`}>
       <svg viewBox="0 0 100 58" width="104" height="60" role="img" aria-label="Wins, break-evens and losses">
         <path d={arc} fill="none" stroke="#eee" strokeWidth="8" />
-        <path d={arc} fill="none" stroke="#4ebf94" strokeWidth="8" strokeDasharray={`${seg(wins)} ${c}`} />
-        <path d={arc} fill="none" stroke="#2959db" strokeWidth="8" strokeDasharray={`${seg(be)} ${c}`} strokeDashoffset={-seg(wins)} />
-        <path d={arc} fill="none" stroke="#f06363" strokeWidth="8" strokeDasharray={`${seg(losses)} ${c}`} strokeDashoffset={-(seg(wins) + seg(be))} />
+        <path d={arc} fill="none" stroke="#22b07d" strokeWidth="8" strokeDasharray={`${seg(wins)} ${c}`} />
+        <path d={arc} fill="none" stroke="#64748b" strokeWidth="8" strokeDasharray={`${seg(be)} ${c}`} strokeDashoffset={-seg(wins)} />
+        <path d={arc} fill="none" stroke="#e5534b" strokeWidth="8" strokeDasharray={`${seg(losses)} ${c}`} strokeDashoffset={-(seg(wins) + seg(be))} />
       </svg>
       <div className="gauge-pills">
         <span className="mini-pill win">{wins}</span>
@@ -203,8 +203,8 @@ export function Donut({ win, loss }: { win: number; loss: number }) {
   const part = (win / total) * c;
   return (
     <svg viewBox="0 0 64 64" width="66" height="66" role="img" aria-label="Gross profit versus gross loss">
-      <circle cx="32" cy="32" r={r} fill="none" stroke="#f06363" strokeWidth="6" />
-      <circle cx="32" cy="32" r={r} fill="none" stroke="#4ebf94" strokeWidth="6" strokeDasharray={`${part} ${c}`} transform="rotate(-90 32 32)" />
+      <circle cx="32" cy="32" r={r} fill="none" stroke="#e5534b" strokeWidth="6" />
+      <circle cx="32" cy="32" r={r} fill="none" stroke="#22b07d" strokeWidth="6" strokeDasharray={`${part} ${c}`} transform="rotate(-90 32 32)" />
     </svg>
   );
 }
@@ -231,21 +231,21 @@ export function PriceChart({ bars, trades, height = 420, focus }: { bars: number
     const chart = createChart(ref.current, {
       height,
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#616161', fontFamily: 'Roboto, sans-serif' },
+      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#5a6474', fontFamily: 'Inter, sans-serif' },
       grid: { vertLines: { color: '#f5f5f5' }, horzLines: { color: '#f5f5f5' } },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: '#eeeeee',
+        borderColor: '#e7ebf0',
         tickMarkFormatter: (t: number) => etTime(t),
       },
-      rightPriceScale: { borderColor: '#eeeeee' },
+      rightPriceScale: { borderColor: '#e7ebf0' },
       localization: {
         timeFormatter: (t: number) => etTime(t),
       },
     });
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#4ebf94', downColor: '#f06363', borderVisible: false, wickUpColor: '#4ebf94', wickDownColor: '#f06363',
+      upColor: '#22b07d', downColor: '#e5534b', borderVisible: false, wickUpColor: '#22b07d', wickDownColor: '#e5534b',
     });
     const seen = new Set<number>();
     const clean = bars.filter((b) => (seen.has(b[0]) ? false : (seen.add(b[0]), true))).sort((a, b) => a[0] - b[0]);
@@ -256,8 +256,8 @@ export function PriceChart({ bars, trades, height = 420, focus }: { bars: number
     const markers: SeriesMarker<Time>[] = [];
     for (const t of trades) {
       const long = t.side === 'Long';
-      markers.push({ time: snap(t.entered_ts), position: long ? 'belowBar' : 'aboveBar', color: t.highlight === false ? '#b9b1dc' : '#6853b5', shape: long ? 'arrowUp' : 'arrowDown', text: t.highlight ? `${long ? 'Buy' : 'Sell'} ${t.qty}` : '' });
-      markers.push({ time: snap(t.exited_ts), position: long ? 'aboveBar' : 'belowBar', color: t.net_pnl >= 0 ? '#2ea87c' : '#dc4a4a', shape: 'circle', text: t.highlight ? money(t.net_pnl, { cents: false }) : '' });
+      markers.push({ time: snap(t.entered_ts), position: long ? 'belowBar' : 'aboveBar', color: t.highlight === false ? '#b3c3e6' : '#2f5fd0', shape: long ? 'arrowUp' : 'arrowDown', text: t.highlight ? `${long ? 'Buy' : 'Sell'} ${t.qty}` : '' });
+      markers.push({ time: snap(t.exited_ts), position: long ? 'aboveBar' : 'belowBar', color: t.net_pnl >= 0 ? '#128a60' : '#cf3f37', shape: 'circle', text: t.highlight ? money(t.net_pnl, { cents: false }) : '' });
     }
     markers.sort((a, b) => Number(a.time) - Number(b.time));
     createSeriesMarkers(candles, markers);

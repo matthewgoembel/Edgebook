@@ -86,13 +86,13 @@ export default function SettingsPage() {
               <label className="label">Break-even range ($)</label>
               <input className="input" type="number" value={form.be_threshold} onChange={(e) => setForm({ ...form, be_threshold: e.target.value })} onBlur={(e) => void save({ be_threshold: e.target.value })} />
               <div className="hint" style={{ marginTop: 5 }}>
-                Trades inside plus or minus this amount count as BE, not wins or losses. To match TradeZella, use the same value you set there.
+                Trades inside plus or minus this amount count as BE, not wins or losses. If you're moving from another journal, use the same value you set there.
               </div>
             </div>
             <div className="field">
               <label className="label">Evening trades go on</label>
               <select className="select" value={form.day_mode} onChange={(e) => void save({ day_mode: e.target.value })}>
-                <option value="calendar">The calendar date they opened (like TradeZella)</option>
+                <option value="calendar">The calendar date they opened</option>
                 <option value="session">Topstep&apos;s trading day (rolls over at 6pm ET)</option>
               </select>
             </div>

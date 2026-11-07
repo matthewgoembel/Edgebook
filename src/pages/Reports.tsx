@@ -103,7 +103,7 @@ export default function ReportsPage() {
           </Card>
           <div className="grid-2">
             <Card title="Cumulative P&L"><EquityArea data={data.days} dataKey="cum" xKey="date" height={260} xFormat={(d: string) => d.slice(5)} /></Card>
-            <Card title="Net daily P&L"><DailyBars data={data.days} height={260} /></Card>
+            <Card title="Daily P&L"><DailyBars data={data.days} height={260} /></Card>
           </div>
           <Card title="Drawdown"><DrawdownChart data={data.days} height={230} /></Card>
         </div>

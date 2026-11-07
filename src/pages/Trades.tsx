@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Columns3, Plus, Rocket } from 'lucide-react';
+import { ChevronDown, ChevronRight, Columns3, Plus, Sunrise } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Donut, EquityArea, Gauge } from '../components/charts';
@@ -32,7 +32,7 @@ function TopStats({ s, days }: { s: any; days: any[] }) {
     <div className="grid-4" style={{ margin: '14px 0' }}>
       <div className="card stat-card">
         <div className="grow">
-          <div className="stat-label">Net cumulative P&amp;L <span className="count-pill">{s.count}</span></div>
+          <div className="stat-label">Equity curve <span className="count-pill">{s.count}</span></div>
           <div className="stat-value">{money(s.net)}</div>
           <EquityArea data={days} dataKey="cum" xKey="date" height={54} showAxis={false} />
         </div>
@@ -46,13 +46,13 @@ function TopStats({ s, days }: { s: any; days: any[] }) {
       </div>
       <div className="card stat-card">
         <div>
-          <div className="stat-label">Trade win %</div>
+          <div className="stat-label">Win rate</div>
           <div className="stat-value">{pct(s.winRate)}</div>
         </div>
         <Gauge value={s.winRate} wins={s.wins} be={s.breakevens} losses={s.losses} />
       </div>
       <div className="card stat-card" style={{ display: 'block' }}>
-        <div className="stat-label">Avg win/loss trade</div>
+        <div className="stat-label">Win/loss ratio</div>
         <div className="row" style={{ gap: 18 }}>
           <div className="stat-value">{s.avgWinLoss.toFixed(2)}</div>
           <div className="grow">
@@ -187,7 +187,7 @@ export default function TradesPage() {
           <h1 className="page-title">Trades</h1>
         </div>
         <div className="row">
-          <button className="btn" onClick={openStartDay}><Rocket size={15} /> Start my day</button>
+          <button className="btn" onClick={openStartDay}><Sunrise size={15} /> Daily prep</button>
           <button className="btn primary" onClick={openAddTrade}><Plus size={15} /> Add trade</button>
         </div>
       </div>

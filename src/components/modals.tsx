@@ -318,7 +318,7 @@ export function StartDayModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal size="small" onClose={onClose}>
       <div className="modal-body">
-        <ModalHeader title="Start my day" onClose={onClose} />
+        <ModalHeader title="Daily prep" onClose={onClose} />
         <p className="hint" style={{ marginTop: 0 }}>Check these off as you go. They feed your progress tracker, and the AI compares your checklist days against your results.</p>
         {today && <ChecklistEditor date={today} />}
       </div>
@@ -342,7 +342,7 @@ export function MoodPicker({ date, mood, moodNote }: { date: string; mood: numbe
   const save = (m: number | null, n: string) => api(`/day/${date}`, { method: 'PUT', json: { mood: m, mood_note: n } }).then(() => qc.invalidateQueries({ queryKey: ['day', date] }));
   return (
     <div className="row" style={{ flexWrap: 'wrap', gap: 14 }}>
-      <b style={{ fontWeight: 500, fontSize: 15 }}>How do you feel about this trading day?</b>
+      <b style={{ fontWeight: 500, fontSize: 15 }}>How did today feel?</b>
       <div className="moods">
         {MOODS.map((m) => (
           <button

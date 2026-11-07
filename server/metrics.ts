@@ -39,7 +39,7 @@ export interface TradeRow {
 
 export type Outcome = 'win' | 'loss' | 'be';
 
-/** A result inside the break-even band is neither a win nor a loss, as in TradeZella. */
+/** A result inside the break-even band is neither a win nor a loss. */
 export function outcome(net: number, beThreshold: number): Outcome {
   if (net > beThreshold) return 'win';
   if (net < -beThreshold) return 'loss';
