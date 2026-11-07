@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, CalendarRange, Check, Crosshair, Loader2, Send, Sparkles, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
+import { CalendarDays, CalendarRange, Check, Crosshair, Loader2, PenLine, Send, Sparkles, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Card, Loading } from '../components/ui';
@@ -10,7 +10,41 @@ const KINDS = [
   { key: 'weekly', icon: CalendarRange, label: 'Weekly review', hint: 'What defined the week and the one change that matters' },
   { key: 'monthly', icon: CalendarRange, label: 'Monthly review', hint: 'What changed and which days should not have been traded' },
   { key: 'patterns', icon: Crosshair, label: 'Edge & pattern report', hint: 'Your full history: when you are at your best and worst' },
+  { key: 'custom', icon: PenLine, label: 'Custom analysis', hint: 'Write your own prompt and get a full report on it' },
 ];
+
+const CUSTOM_EXAMPLES = [
+  'Compare my Monday trades with the rest of my week',
+  'Which of my losses were good trades, and which were mistakes?',
+  'How does my trading change after a big green day?',
+];
+
+function CustomReportView({ row }: { row: any }) {
+  const r = JSON.parse(row.result);
+  return (
+    <div className="report">
+      <div className="hint">{row.title}</div>
+      <h2 style={{ marginTop: 3 }}>{r.headline}</h2>
+      <div className="custom-prompt">{row.prompt}</div>
+      {r.sections.map((s: any) => (
+        <div key={s.title}>
+          <h3>{s.title}</h3>
+          <p style={{ whiteSpace: 'pre-wrap' }}>{s.body}</p>
+        </div>
+      ))}
+      <p className="hint" style={{ marginTop: 18 }}>{r.sample_note}</p>
+      {r.follow_ups.length > 0 && (
+        <>
+          <h3>Worth asking next</h3>
+          <ul style={{ paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>{r.follow_ups.map((n: string) => <li key={n}>{n}</li>)}</ul>
+        </>
+      )}
+      <p className="hint" style={{ marginTop: 22 }}>
+        {row.model} · {row.scope_from === '2000-01-01' ? 'All history' : `${row.scope_from} to ${row.scope_to}`} · {row.images_used} screenshot{row.images_used === 1 ? '' : 's'} read · ${row.cost_usd.toFixed(2)}
+      </p>
+    </div>
+  );
+}
 
 function ReportView({ row, adopted, onAdopt }: { row: any; adopted: Set<string>; onAdopt: (rule: { rule: string; why: string }) => void }) {
   const r = JSON.parse(row.result);
@@ -122,19 +156,20 @@ function ReportView({ row, adopted, onAdopt }: { row: any; adopted: Set<string>;
 function Generator({ today, lastDay, onStarted, hasKey }: { today: string; lastDay: string | null; onStarted: (id: number) => void; hasKey: boolean }) {
   const [kind, setKind] = useState('daily');
   const [date, setDate] = useState('');
+  const [prompt, setPrompt] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const day = date || lastDay || today;
-  const defaultFrom = kind === 'weekly' ? addDays(today, -6) : kind === 'monthly' ? addDays(today, -29) : '2000-01-01';
+  const defaultFrom = kind === 'weekly' ? addDays(today, -6) : kind === 'monthly' ? addDays(today, -29) : kind === 'custom' ? '' : '2000-01-01';
 
   const run = async () => {
     setBusy(true);
     setError('');
     try {
-      const body = kind === 'daily' ? { kind, from: day, to: day } : { kind, from: from || defaultFrom, to: to || today };
+      const body = kind === 'daily' ? { kind, from: day, to: day } : { kind, from: from || defaultFrom || '2000-01-01', to: to || today, prompt };
       const { id } = await api('/ai/reports', { method: 'POST', json: body });
       onStarted(id);
     } catch (err) {
@@ -162,15 +197,27 @@ function Generator({ today, lastDay, onStarted, hasKey }: { today: string; lastD
           </div>
         ) : (
           kind !== 'patterns' && (
+            <>
+            {kind === 'custom' && (
+              <div className="field">
+                <label className="label" htmlFor="custom-prompt">What do you want analyzed?</label>
+                <textarea id="custom-prompt" className="input" rows={5} maxLength={4000} placeholder={CUSTOM_EXAMPLES[0]} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+                <div className="tag-row" style={{ marginTop: 6 }}>
+                  {CUSTOM_EXAMPLES.map((text) => <button type="button" className="btn small" style={{ whiteSpace: 'normal', height: 'auto', padding: '5px 8px', textAlign: 'left' }} key={text} onClick={() => setPrompt(text)}>{text}</button>)}
+                </div>
+              </div>
+            )}
             <div className="row">
               <div className="field grow"><label className="label">From</label><input type="date" className="input" value={from || defaultFrom} onChange={(e) => setFrom(e.target.value)} /></div>
               <div className="field grow"><label className="label">To</label><input type="date" className="input" value={to || today} onChange={(e) => setTo(e.target.value)} /></div>
             </div>
+            {kind === 'custom' && <div className="hint" style={{ marginBottom: 12 }}>Leave From empty to use your whole history.</div>}
+            </>
           )
         )}
         {error && <div className="banner bad">{error}</div>}
         {hasKey ? (
-          <button className="btn primary" style={{ width: '100%' }} disabled={busy} onClick={() => void run()}><Sparkles size={15} /> Run analysis</button>
+          <button className="btn primary" style={{ width: '100%' }} disabled={busy || (kind === 'custom' && !prompt.trim())} onClick={() => void run()}><Sparkles size={15} /> Run analysis</button>
         ) : (
           <Link className="btn primary" style={{ width: '100%' }} to="/settings">Add your Claude API key</Link>
         )}
@@ -372,7 +419,7 @@ export default function AiPage() {
                 ) : current.status === 'failed' ? (
                   <div className="banner bad">{current.error}</div>
                 ) : (
-                  <ReportView
+                  current.kind === 'custom' ? <CustomReportView row={current} /> : <ReportView
                     row={current}
                     adopted={adopted}
                     onAdopt={(rule) => void api('/ai/rules', { method: 'POST', json: { text: rule.rule, why: rule.why, source_report_id: current.id } }).then(refreshRules)}

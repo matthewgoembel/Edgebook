@@ -190,6 +190,7 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
                       className="input"
                       aria-label={`Name for ${ref}`}
                       placeholder={ref}
+                      list="empty-accounts"
                       value={refNames[ref]?.name ?? ''}
                       onChange={(e) => setRefNames({ ...refNames, [ref]: { name: e.target.value } })}
                     />
@@ -197,6 +198,10 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             )}
+
+            <datalist id="empty-accounts">
+              {accounts.filter((a) => !a.external_ref).map((a) => <option key={a.id} value={a.name} />)}
+            </datalist>
 
             {shared.length > 0 && (
               <div className="banner" style={{ marginTop: 12, marginBottom: 0 }}>

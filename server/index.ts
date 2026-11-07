@@ -101,6 +101,7 @@ app.post('/api/settings/test-ai', async (_req, res) => {
 app.post('/api/accounts', (req, res) => {
   const { name, broker = 'Topstep', account_type = 'Funded', initial_balance = 0 } = req.body;
   if (!name?.trim()) return void res.status(400).json({ error: 'Give the account a name.' });
+  if (db.prepare('SELECT 1 FROM accounts WHERE name = ?').get(name.trim())) return void res.status(400).json({ error: 'You already have an account with that name.' });
   const info = db.prepare('INSERT INTO accounts (name, broker, account_type, initial_balance) VALUES (?, ?, ?, ?)').run(name.trim(), broker, account_type, num(initial_balance) || 0);
   res.json({ id: info.lastInsertRowid });
 });
@@ -881,7 +882,7 @@ app.get('/api/backup', async (_req, res) => {
 app.get('/api/ai/reports', (_req, res) => {
   res.json(
     db
-      .prepare('SELECT id, kind, scope_from, scope_to, title, status, error, model, images_used, input_tokens, output_tokens, cost_usd, created_at, result FROM ai_reports ORDER BY id DESC LIMIT 200')
+      .prepare('SELECT id, kind, scope_from, scope_to, title, prompt, status, error, model, images_used, input_tokens, output_tokens, cost_usd, created_at, result FROM ai_reports ORDER BY id DESC LIMIT 200')
       .all(),
   );
 });
@@ -894,9 +895,12 @@ app.get('/api/ai/reports/:id', (req, res) => {
 
 app.post('/api/ai/reports', (req, res) => {
   const { kind, from, to } = req.body;
+  const prompt = kind === 'custom' ? String(req.body.prompt ?? '').trim() : null;
+  if (kind === 'custom' && !prompt) return void res.status(400).json({ error: 'Write what you want analyzed first.' });
+  if (prompt && prompt.length > 4000) return void res.status(400).json({ error: 'Keep your prompt under 4,000 characters.' });
   if (!hasAiKey()) return void res.status(400).json({ error: 'Add your Claude API key in Settings first.' });
   if (!['daily', 'weekly', 'monthly', 'patterns', 'custom'].includes(kind) || !from) return void res.status(400).json({ error: 'Pick a report and dates.' });
-  res.json({ id: startReport(kind, from, to || from) });
+  res.json({ id: startReport(kind, from, to || from, prompt) });
 });
 
 app.delete('/api/ai/reports/:id', (req, res) => {

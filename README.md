@@ -31,7 +31,7 @@ Bring in your history by uploading every older Topstep export at once. Pick the 
 
 ## AI setup
 
-Create a key at console.anthropic.com under API Keys and paste it into Settings. API usage is billed separately from a Claude subscription. Nothing goes to the API until you run a report or ask a question, and each report shows its cost.
+Create a key at console.anthropic.com under API Keys and paste it into Settings. API usage is billed separately from a Claude subscription. Nothing goes to the API until you run a report or ask a question, and each report shows its cost. Use **Custom analysis** on the Edge AI page to write your own prompt for any date range.
 
 ## Good to know
 

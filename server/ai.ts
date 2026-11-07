@@ -64,6 +64,14 @@ export const ReportSchema = z.object({
 
 export type Report = z.infer<typeof ReportSchema>;
 
+/** A custom question decides its own shape, so it gets a free-form answer rather than the fixed review. */
+export const CustomReportSchema = z.object({
+  headline: z.string().describe('The direct answer to the question, in one sharp sentence'),
+  sections: z.array(z.object({ title: z.string(), body: z.string().describe('Plain text only, no markdown. Use line breaks between points.') })),
+  sample_note: z.string().describe('How much data this answer rests on, and how much to trust it'),
+  follow_ups: z.array(z.string()).describe('Up to three questions worth asking next'),
+});
+
 const SYSTEM = `You are Edge, the performance analyst inside Edgebook, a private journal belonging to one discretionary futures day trader who trades NQ and MNQ on Topstep accounts. You review what has already happened. You do not forecast markets or tell the trader what to buy or sell.
 
 The trader already has a dashboard full of statistics and is tired of tools that read those numbers back. Your job is the part a dashboard cannot do: connect the fills, the notes, the mood, the checklist, the market context and the chart screenshots into an explanation of why results happened and what to change.
@@ -125,8 +133,9 @@ function digestPriorReports(excludeId?: number) {
   const blocks = rows
     .filter((r) => r.id !== excludeId)
     .map((r) => {
-      const report = JSON.parse(r.result) as Report;
-      return `- ${r.kind} report for ${r.scope_from} to ${r.scope_to}: ${report.headline} Findings: ${report.findings.map((f) => f.title).join('; ')}.`;
+      const report = JSON.parse(r.result) as Report & { sections?: { title: string }[] };
+      const topics = report.findings?.map((f) => f.title) ?? report.sections?.map((s) => s.title) ?? [];
+      return `- ${r.kind} report for ${r.scope_from} to ${r.scope_to}: ${report.headline} Findings: ${topics.join('; ')}.`;
     });
   return blocks.length ? blocks.join('\n') : 'None yet.';
 }
@@ -242,7 +251,7 @@ ${screenshots.count ? `${screenshots.count} screenshot(s) follow.` : 'No screens
   return { title: `Daily debrief · ${weekday(date)}, ${date}`, text, images: screenshots.blocks, imageCount: screenshots.count };
 }
 
-async function buildRange(kind: string, from: string, to: string, reportId: number): Promise<Built> {
+async function buildRange(kind: string, from: string, to: string, reportId: number, prompt: string | null): Promise<Built> {
   const trades = loadJournal({ from, to });
   if (!trades.length) throw new Error('No trades in that date range.');
   // "All history" arrives as an open-ended range, so show the dates actually covered.
@@ -266,7 +275,7 @@ async function buildRange(kind: string, from: string, to: string, reportId: numb
     monthly: 'Review this month. Show what changed compared with earlier behavior, where the money was truly made and lost, and which days should not have been traded.',
     patterns:
       'Do a deep review of this whole history. Find the conditions that make a day or a trade high probability for this trader and those that make it low probability. Rank by how much money each one moves. Describe the trader\'s real edge in concrete terms, and the two or three leaks that cost the most.',
-    custom: 'Review this period. Find what truly drove results and what should change.',
+    custom: `The trader wrote this question about their own journal. Answer exactly what they asked, using the data below. Don't turn it into a general review.\n\n"""\n${prompt ?? ''}\n"""`,
   };
 
   const text = `${copyNote(positions)}${instructions[kind] ?? instructions.custom}
@@ -310,7 +319,8 @@ ${digestPriorReports(reportId)}
 ${screenshots.count ? `Screenshots from the best and worst journaled days follow (${picks.join(', ')}).` : 'No screenshots are attached for this period.'}`;
 
   const names: Record<string, string> = { weekly: 'Weekly review', monthly: 'Monthly review', patterns: 'Edge & pattern report', custom: 'Custom review' };
-  return { title: `${names[kind] ?? 'Review'} · ${from} to ${to}`, text, images: screenshots.blocks, imageCount: screenshots.count };
+  const title = prompt ? customTitle(prompt) : `${names[kind] ?? 'Review'} · ${from} to ${to}`;
+  return { title, text, images: screenshots.blocks, imageCount: screenshots.count };
 }
 
 function requestParams(max_tokens: number) {
@@ -345,18 +355,21 @@ function explainError(err: unknown) {
   return (err as Error).message;
 }
 
-async function runReport(id: number, kind: string, from: string, to: string) {
+const customTitle = (prompt: string) => `Custom · ${prompt.length > 60 ? `${prompt.slice(0, 60).trimEnd()}…` : prompt}`;
+
+async function runReport(id: number, kind: string, from: string, to: string, prompt: string | null) {
   try {
-    const built = kind === 'daily' ? await buildDaily(from, id) : await buildRange(kind, from, to, id);
+    const built = kind === 'daily' ? await buildDaily(from, id) : await buildRange(kind, from, to, id, prompt);
     db.prepare('UPDATE ai_reports SET title = ?, images_used = ? WHERE id = ?').run(built.title, built.imageCount, id);
 
     const params = requestParams(32000);
+    const schema = kind === 'custom' ? CustomReportSchema : ReportSchema;
     const effort = (getSettings().ai_effort || 'high') as 'low' | 'medium' | 'high' | 'xhigh';
     const message = await client()
       .beta.messages.stream({
         ...params,
         system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-        output_config: { effort, format: betaZodOutputFormat(ReportSchema) },
+        output_config: { effort, format: betaZodOutputFormat(schema as typeof ReportSchema) },
         messages: [{ role: 'user', content: [{ type: 'text', text: built.text }, ...built.images] }],
       })
       .finalMessage();
@@ -364,7 +377,7 @@ async function runReport(id: number, kind: string, from: string, to: string) {
     if (message.stop_reason === 'refusal') throw new Error('Claude declined to analyze this request.');
     if (message.stop_reason === 'max_tokens') throw new Error('The report ran too long. Try a shorter date range.');
     const text = message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-    const report = ReportSchema.parse(JSON.parse(text));
+    const report = schema.parse(JSON.parse(text));
     const usage = usageCost(message.model, message.usage);
     db.prepare("UPDATE ai_reports SET status = 'done', model = ?, result = ?, input_tokens = ?, output_tokens = ?, cost_usd = ? WHERE id = ?").run(
       message.model,
@@ -380,12 +393,12 @@ async function runReport(id: number, kind: string, from: string, to: string) {
   }
 }
 
-export function startReport(kind: string, from: string, to: string) {
+export function startReport(kind: string, from: string, to: string, prompt: string | null = null) {
   const info = db
-    .prepare("INSERT INTO ai_reports (kind, scope_from, scope_to, title, status) VALUES (?, ?, ?, ?, 'running')")
-    .run(kind, from, to, kind === 'daily' ? `Daily debrief · ${from}` : `Review · ${from} to ${to}`);
+    .prepare("INSERT INTO ai_reports (kind, scope_from, scope_to, title, status, prompt) VALUES (?, ?, ?, ?, 'running', ?)")
+    .run(kind, from, to, prompt ? customTitle(prompt) : kind === 'daily' ? `Daily debrief · ${from}` : `Review · ${from} to ${to}`, prompt);
   const id = Number(info.lastInsertRowid);
-  void runReport(id, kind, from, to);
+  void runReport(id, kind, from, to, prompt);
   return id;
 }
 

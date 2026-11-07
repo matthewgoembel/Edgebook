@@ -212,6 +212,7 @@ function addColumn(table: string, column: string, definition: string) {
   if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 addColumn('accounts', 'external_ref', 'TEXT');
+addColumn('ai_reports', 'prompt', 'TEXT');
 addColumn('trades', 'entry_type', 'TEXT');
 addColumn('trades', 'exit_type', 'TEXT');
 addColumn('trades', 'stop_price', 'REAL');
